@@ -179,6 +179,14 @@ export const appwriteAuth = {
       });
       safeStorage.setItem(STORAGE_ACCOUNTS_KEY, JSON.stringify(accounts));
 
+      if (role === 'captain') {
+        safeStorage.setItem('motoride_captain_name', name.trim());
+        safeStorage.setItem('motoride_captain_email', cleanEmail);
+        if (extra?.phone) safeStorage.setItem('motoride_captain_phone', extra.phone);
+        if (extra?.vehicleModel) safeStorage.setItem('motoride_captain_vehicle_model', extra.vehicleModel);
+        if (extra?.plateNumber) safeStorage.setItem('motoride_captain_plate', extra.plateNumber);
+      }
+
       this.setCurrentUser(newUser);
 
       // Attempt Appwrite Auth account registration

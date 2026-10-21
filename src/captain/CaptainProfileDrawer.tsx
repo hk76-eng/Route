@@ -40,6 +40,7 @@ import {
 import { Captain } from '../types/motoride';
 import { uploadMediaToAppwrite as uploadMediaToSupabase, compressImageToDataUrl } from '../lib/appwriteStorage';
 import { appwriteAuth as supabaseAuth } from '../lib/appwriteAuth';
+import { safeStorage } from '../lib/safeStorage';
 
 interface CaptainProfileDrawerProps {
   isOpen: boolean;

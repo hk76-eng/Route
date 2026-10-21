@@ -84,3 +84,12 @@ export const safeStorage = {
     }
   },
 };
+
+// Global fallback to prevent ReferenceError in any environment or unimported context
+if (typeof window !== 'undefined') {
+  (window as any).safeStorage = safeStorage;
+}
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).safeStorage = safeStorage;
+}
+
