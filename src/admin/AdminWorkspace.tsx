@@ -21,7 +21,7 @@ import {
 } from '../lib/appwrite';
 import { realtimeSync } from '../services/realtimeSync';
 import { AuthUser, appwriteAuth, syncAllAccountsToAppwrite, isDemoAccount, isDemoRide } from '../lib/appwriteAuth';
-import { ensureMediaBucketExists, uploadMediaToAppwrite, MOTORIDE_MEDIA_BUCKET, StorageStatus } from '../lib/appwriteStorage';
+import { ensureMediaBucketExists, uploadMediaToAppwrite, MOTORIDE_MEDIA_BUCKET, MOTORIDE_MEDIA_BUCKET_NAME, StorageStatus } from '../lib/appwriteStorage';
 import { APPWRITE_SCHEMA_SPEC_JSON, APPWRITE_COLLECTIONS } from '../lib/appwriteSchema';
 import { AppwriteConfigModal } from '../components/common/AppwriteConfigModal';
 import {
@@ -2190,10 +2190,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                   🗄️
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-white flex items-center gap-2">
-                    <span>Appwrite Media Storage Bucket</span>
+                  <h3 className="text-xs font-black text-white flex items-center gap-2 flex-wrap">
+                    <span>Appwrite Storage Bucket:</span>
                     <span className="px-2 py-0.5 rounded-full bg-pink-500/10 border border-pink-500/30 text-pink-300 text-[10px] font-bold">
-                      {MOTORIDE_MEDIA_BUCKET}
+                      {MOTORIDE_MEDIA_BUCKET_NAME}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({MOTORIDE_MEDIA_BUCKET})
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400">
@@ -2227,7 +2230,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
               <div className="flex items-center gap-2">
                 <label className="px-3 py-1.5 rounded-xl bg-pink-600 hover:bg-pink-500 text-white font-bold text-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1.5">
                   <UploadCloud className="w-3.5 h-3.5" />
-                  <span>Test Upload to {MOTORIDE_MEDIA_BUCKET}</span>
+                  <span>Test Upload to {MOTORIDE_MEDIA_BUCKET_NAME}</span>
                   <input
                     type="file"
                     className="hidden"

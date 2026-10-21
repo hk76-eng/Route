@@ -3,6 +3,8 @@ import { Client, Account, Databases, Realtime, Storage } from 'appwrite';
 export const DEFAULT_APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
 export const DEFAULT_APPWRITE_PROJECT_ID = '6ad0ec20000c3632117b';
 export const DEFAULT_APPWRITE_DATABASE_ID = 'motoride_db';
+export const DEFAULT_APPWRITE_BUCKET_ID = '6ad8dec90028274c8e3c';
+export const DEFAULT_APPWRITE_BUCKET_NAME = 'route_media';
 
 const getSavedOrEnv = (key: string, envVal: string | undefined, defaultVal: string): string => {
   if (typeof window !== 'undefined') {
@@ -31,6 +33,18 @@ export let appwriteDatabaseId: string = getSavedOrEnv(
   'appwrite_database_id',
   (import.meta as any).env?.VITE_APPWRITE_DATABASE_ID,
   DEFAULT_APPWRITE_DATABASE_ID
+);
+
+export let appwriteBucketId: string = getSavedOrEnv(
+  'appwrite_bucket_id',
+  (import.meta as any).env?.VITE_APPWRITE_BUCKET_ID,
+  DEFAULT_APPWRITE_BUCKET_ID
+);
+
+export let appwriteBucketName: string = getSavedOrEnv(
+  'appwrite_bucket_name',
+  (import.meta as any).env?.VITE_APPWRITE_BUCKET_NAME,
+  DEFAULT_APPWRITE_BUCKET_NAME
 );
 
 export const isAppwriteConfigured = (): boolean => {
@@ -111,6 +125,8 @@ export const getAppwriteConfig = () => ({
   endpoint: appwriteEndpoint,
   projectId: appwriteProjectId,
   databaseId: appwriteDatabaseId,
+  bucketId: appwriteBucketId,
+  bucketName: appwriteBucketName,
   isReady: isAppwriteConfigured(),
 });
 
@@ -118,6 +134,8 @@ export const saveAppwriteConfig = (config: {
   endpoint?: string;
   projectId?: string;
   databaseId?: string;
+  bucketId?: string;
+  bucketName?: string;
 }) => {
   if (config.endpoint !== undefined) {
     appwriteEndpoint = (config.endpoint || DEFAULT_APPWRITE_ENDPOINT).trim().replace(/\/+$/, '');
@@ -137,6 +155,18 @@ export const saveAppwriteConfig = (config: {
       localStorage.setItem('motoride_appwrite_database_id', appwriteDatabaseId);
     }
   }
+  if (config.bucketId !== undefined) {
+    appwriteBucketId = (config.bucketId || DEFAULT_APPWRITE_BUCKET_ID).trim();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('motoride_appwrite_bucket_id', appwriteBucketId);
+    }
+  }
+  if (config.bucketName !== undefined) {
+    appwriteBucketName = (config.bucketName || DEFAULT_APPWRITE_BUCKET_NAME).trim();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('motoride_appwrite_bucket_name', appwriteBucketName);
+    }
+  }
   resetAppwriteClient();
   return getAppwriteConfig();
 };
@@ -146,10 +176,14 @@ export const resetAppwriteConfigToDefault = () => {
     localStorage.removeItem('motoride_appwrite_endpoint');
     localStorage.removeItem('motoride_appwrite_project_id');
     localStorage.removeItem('motoride_appwrite_database_id');
+    localStorage.removeItem('motoride_appwrite_bucket_id');
+    localStorage.removeItem('motoride_appwrite_bucket_name');
   }
   appwriteEndpoint = DEFAULT_APPWRITE_ENDPOINT;
   appwriteProjectId = DEFAULT_APPWRITE_PROJECT_ID;
   appwriteDatabaseId = DEFAULT_APPWRITE_DATABASE_ID;
+  appwriteBucketId = DEFAULT_APPWRITE_BUCKET_ID;
+  appwriteBucketName = DEFAULT_APPWRITE_BUCKET_NAME;
   resetAppwriteClient();
   return getAppwriteConfig();
 };
@@ -170,7 +204,6 @@ export const testAppwriteConnection = async (): Promise<{
   }
 
   try {
-    // Ping Appwrite /health or /account to verify network reachability
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
 
@@ -194,7 +227,6 @@ export const testAppwriteConnection = async (): Promise<{
       };
     }
 
-    // Direct fetch test to endpoint
     const fallbackRes = await fetch(`${appwriteEndpoint}/account`, {
       method: 'GET',
       headers: {
@@ -204,7 +236,6 @@ export const testAppwriteConnection = async (): Promise<{
 
     const fallbackLatency = Date.now() - startTime;
 
-    // A 401 from Appwrite means the project and endpoint are 100% valid and listening
     if ('status' in fallbackRes && (fallbackRes.status === 401 || fallbackRes.status === 200)) {
       return {
         success: true,
@@ -237,6 +268,12 @@ export const APPWRITE_CONFIG_STATUS = {
   get databaseId() {
     return appwriteDatabaseId;
   },
+  get bucketId() {
+    return appwriteBucketId;
+  },
+  get bucketName() {
+    return appwriteBucketName;
+  },
   get isReady() {
     return isAppwriteConfigured();
   },
@@ -245,5 +282,8 @@ export const APPWRITE_CONFIG_STATUS = {
   },
   get projectPreview() {
     return appwriteProjectId ? `${appwriteProjectId.slice(0, 8)}...${appwriteProjectId.slice(-4)}` : 'Not configured';
+  },
+  get bucketPreview() {
+    return `${appwriteBucketName} (${appwriteBucketId.slice(0, 8)}...)`;
   },
 };

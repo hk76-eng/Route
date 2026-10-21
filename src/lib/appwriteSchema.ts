@@ -3,6 +3,7 @@
  * Database ID: motoride_db
  * Project ID: 6ad0ec20000c3632117b
  * Endpoint: https://fra.cloud.appwrite.io/v1
+ * Storage Bucket: route_media (6ad8dec90028274c8e3c)
  */
 
 export interface AppwriteCollectionBlueprint {
@@ -127,6 +128,13 @@ export const APPWRITE_SCHEMA_SPEC_JSON = JSON.stringify(
     endpoint: 'https://fra.cloud.appwrite.io/v1',
     databaseId: 'motoride_db',
     name: 'MotoRide Production Database',
+    storage: {
+      bucketId: '6ad8dec90028274c8e3c',
+      name: 'route_media',
+      maxFileSize: '50MB',
+      allowedFileExtensions: ['jpg', 'png', 'webp', 'jpeg', 'svg', 'mp4'],
+      permissions: ['read("any")', 'create("any")'],
+    },
     collections: APPWRITE_COLLECTIONS,
   },
   null,

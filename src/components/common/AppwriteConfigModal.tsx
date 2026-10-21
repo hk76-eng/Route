@@ -12,16 +12,20 @@ import {
   Server,
   Key,
   Layers,
+  FolderArchive,
 } from 'lucide-react';
 import {
   appwriteEndpoint,
   appwriteProjectId,
   appwriteDatabaseId,
+  appwriteBucketId,
+  appwriteBucketName,
   isAppwriteConfigured,
   saveAppwriteConfig,
   resetAppwriteConfigToDefault,
   testAppwriteConnection,
 } from '../../lib/appwrite';
+import { ensureMediaBucketExists } from '../../lib/appwriteStorage';
 import { APPWRITE_SCHEMA_SPEC_JSON, APPWRITE_COLLECTIONS } from '../../lib/appwriteSchema';
 
 interface AppwriteConfigModalProps {
@@ -33,6 +37,8 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
   const [endpoint, setEndpoint] = useState(appwriteEndpoint);
   const [projectId, setProjectId] = useState(appwriteProjectId);
   const [databaseId, setDatabaseId] = useState(appwriteDatabaseId);
+  const [bucketId, setBucketId] = useState(appwriteBucketId);
+  const [bucketName, setBucketName] = useState(appwriteBucketName);
 
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -40,6 +46,9 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
     message: string;
     latencyMs?: number;
   } | null>(null);
+
+  const [bucketStatus, setBucketStatus] = useState<string | null>(null);
+  const [isTestingBucket, setIsTestingBucket] = useState(false);
 
   const [copiedEnv, setCopiedEnv] = useState(false);
   const [copiedSchema, setCopiedSchema] = useState(false);
@@ -50,6 +59,8 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
       setEndpoint(appwriteEndpoint);
       setProjectId(appwriteProjectId);
       setDatabaseId(appwriteDatabaseId);
+      setBucketId(appwriteBucketId);
+      setBucketName(appwriteBucketName);
       setSaveMessage(null);
       // Auto test connection on open
       runConnectionTest();
@@ -72,14 +83,28 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
     }
   };
 
+  const handleTestBucket = async () => {
+    setIsTestingBucket(true);
+    try {
+      const status = await ensureMediaBucketExists();
+      setBucketStatus(status.message);
+    } catch (err: any) {
+      setBucketStatus(err?.message || 'Failed to verify bucket');
+    } finally {
+      setIsTestingBucket(false);
+    }
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     saveAppwriteConfig({
       endpoint: endpoint.trim(),
       projectId: projectId.trim(),
       databaseId: databaseId.trim(),
+      bucketId: bucketId.trim(),
+      bucketName: bucketName.trim(),
     });
-    setSaveMessage('Appwrite environment variables updated and client re-initialized!');
+    setSaveMessage('Appwrite environment variables & bucket settings updated!');
     setTimeout(() => {
       runConnectionTest();
     }, 200);
@@ -90,6 +115,8 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
     setEndpoint(appwriteEndpoint);
     setProjectId(appwriteProjectId);
     setDatabaseId(appwriteDatabaseId);
+    setBucketId(appwriteBucketId);
+    setBucketName(appwriteBucketName);
     setSaveMessage('Reset to default Appwrite configuration');
     setTimeout(() => {
       runConnectionTest();
@@ -99,7 +126,9 @@ export const AppwriteConfigModal: React.FC<AppwriteConfigModalProps> = ({ isOpen
   const envSnippet = `# Appwrite Cloud Backend Configuration
 VITE_APPWRITE_ENDPOINT=${endpoint}
 VITE_APPWRITE_PROJECT_ID=${projectId}
-VITE_APPWRITE_DATABASE_ID=${databaseId}`;
+VITE_APPWRITE_DATABASE_ID=${databaseId}
+VITE_APPWRITE_BUCKET_ID=${bucketId}
+VITE_APPWRITE_BUCKET_NAME=${bucketName}`;
 
   const copyToClipboard = (text: string, type: 'env' | 'schema') => {
     navigator.clipboard.writeText(text);
@@ -137,7 +166,7 @@ VITE_APPWRITE_DATABASE_ID=${databaseId}`;
                 </span>
               </div>
               <p className="text-xs text-slate-400">
-                Shared database, auth, and realtime across Passenger, Captain, and Admin apps
+                Shared database, auth, storage, and realtime across Passenger, Captain, and Admin apps
               </p>
             </div>
           </div>
@@ -210,6 +239,34 @@ VITE_APPWRITE_DATABASE_ID=${databaseId}`;
             </div>
           )}
 
+          {/* Active Storage Bucket Card */}
+          <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <FolderArchive className="w-4 h-4 text-pink-400" />
+                <span className="text-xs font-bold text-white">Appwrite Storage Bucket:</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-pink-500/10 border border-pink-500/30 text-pink-300">
+                  {bucketName}
+                </span>
+                <code className="text-[11px] font-mono text-slate-400">({bucketId})</code>
+              </div>
+              <button
+                type="button"
+                onClick={handleTestBucket}
+                disabled={isTestingBucket}
+                className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isTestingBucket ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3 text-pink-400" />}
+                <span>{isTestingBucket ? 'Checking...' : 'Verify Bucket'}</span>
+              </button>
+            </div>
+            {bucketStatus && (
+              <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-[11px] text-pink-300 font-mono">
+                {bucketStatus}
+              </div>
+            )}
+          </div>
+
           {saveMessage && (
             <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/30 text-indigo-300 text-xs flex items-center gap-2">
               <Check className="w-4 h-4 text-indigo-400" />
@@ -233,43 +290,71 @@ VITE_APPWRITE_DATABASE_ID=${databaseId}`;
               </button>
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">
-                Appwrite API Endpoint
-              </label>
-              <input
-                type="text"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="https://fra.cloud.appwrite.io/v1"
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Appwrite API Endpoint
+                </label>
+                <input
+                  type="text"
+                  value={endpoint}
+                  onChange={(e) => setEndpoint(e.target.value)}
+                  placeholder="https://fra.cloud.appwrite.io/v1"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
+                />
+              </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">
-                Appwrite Project ID
-              </label>
-              <input
-                type="text"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                placeholder="6ad0ec20000c3632117b"
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
-              />
-            </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Appwrite Project ID
+                </label>
+                <input
+                  type="text"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  placeholder="6ad0ec20000c3632117b"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
+                />
+              </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-slate-400 block mb-1">
-                Database ID
-              </label>
-              <input
-                type="text"
-                value={databaseId}
-                onChange={(e) => setDatabaseId(e.target.value)}
-                placeholder="motoride_db"
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
-              />
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Database ID
+                </label>
+                <input
+                  type="text"
+                  value={databaseId}
+                  onChange={(e) => setDatabaseId(e.target.value)}
+                  placeholder="motoride_db"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Storage Bucket ID
+                </label>
+                <input
+                  type="text"
+                  value={bucketId}
+                  onChange={(e) => setBucketId(e.target.value)}
+                  placeholder="6ad8dec90028274c8e3c"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-400 block mb-1">
+                  Storage Bucket Name
+                </label>
+                <input
+                  type="text"
+                  value={bucketName}
+                  onChange={(e) => setBucketName(e.target.value)}
+                  placeholder="route_media"
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-pink-500"
+                />
+              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
