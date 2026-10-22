@@ -12,13 +12,98 @@ import {
   RideOffer,
   PassengerLiveLocation,
 } from '../types/motoride';
-import { getAppwriteDatabases, isAppwriteConfigured, appwriteDatabaseId } from '../lib/appwrite';
+import { getAppwriteDatabases, isAppwriteConfigured, appwriteDatabaseId, Permission, Role } from '../lib/appwrite';
 import { safeStorage } from '../lib/safeStorage';
 import { appwriteAuth } from '../lib/appwriteAuth';
 import { realtimeSync } from './realtimeSync';
 import { saveApkBlobToIndexedDb, getApkBlobFromIndexedDb, deleteApkBlobFromIndexedDb } from '../lib/apkStorage';
 
 const API_BASE = '/api/motoride';
+
+function sanitizeForAppwrite(data: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined) continue;
+    if (key === 'offers' && Array.isArray(value)) {
+      result[key] = JSON.stringify(value);
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = JSON.stringify(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+async function safeAppwriteCreateDocument(
+  collectionId: string,
+  documentId: string,
+  data: Record<string, any>
+): Promise<boolean> {
+  const databases = getAppwriteDatabases();
+  if (!databases || !isAppwriteConfigured()) return false;
+
+  try {
+    const permissions = [
+      Permission.read(Role.any()),
+      Permission.write(Role.any()),
+      Permission.update(Role.any()),
+      Permission.delete(Role.any()),
+    ];
+    const sanitized = sanitizeForAppwrite(data);
+    await databases.createDocument(appwriteDatabaseId, collectionId, documentId, sanitized, permissions);
+    return true;
+  } catch (err: any) {
+    try {
+      const sanitized = sanitizeForAppwrite(data);
+      await databases.createDocument(appwriteDatabaseId, collectionId, documentId, sanitized);
+      return true;
+    } catch (err2: any) {
+      try {
+        const primitiveData: Record<string, any> = {};
+        for (const [k, v] of Object.entries(data)) {
+          if (v !== undefined && v !== null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+            primitiveData[k] = v;
+          }
+        }
+        await databases.createDocument(appwriteDatabaseId, collectionId, documentId, primitiveData);
+        return true;
+      } catch (err3: any) {
+        console.warn(`Appwrite createDocument notice for ${collectionId}:`, err3?.message || err3);
+        return false;
+      }
+    }
+  }
+}
+
+async function safeAppwriteUpdateDocument(
+  collectionId: string,
+  documentId: string,
+  data: Record<string, any>
+): Promise<boolean> {
+  const databases = getAppwriteDatabases();
+  if (!databases || !isAppwriteConfigured()) return false;
+
+  try {
+    const sanitized = sanitizeForAppwrite(data);
+    await databases.updateDocument(appwriteDatabaseId, collectionId, documentId, sanitized);
+    return true;
+  } catch (err: any) {
+    try {
+      const primitiveData: Record<string, any> = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (v !== undefined && v !== null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
+          primitiveData[k] = v;
+        }
+      }
+      await databases.updateDocument(appwriteDatabaseId, collectionId, documentId, primitiveData);
+      return true;
+    } catch (err2: any) {
+      console.warn(`Appwrite updateDocument notice for ${collectionId}:`, err2?.message || err2);
+      return false;
+    }
+  }
+}
 
 // Local and cross-browser memory store for resilient instant sync
 const localRidesStore: Map<string, MotorideRide> = new Map();
@@ -212,20 +297,34 @@ export const motorideApi = {
       try {
         const res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch(() => null);
         if (res?.documents && Array.isArray(res.documents)) {
-          (res.documents as unknown as MotorideRide[]).forEach((r) => {
-            if (r && r.id) {
-              const existing = localRidesStore.get(r.id) || map.get(r.id) || ({} as MotorideRide);
+          (res.documents as unknown as any[]).forEach((doc) => {
+            if (doc && (doc.id || doc.$id)) {
+              const rideId = doc.id || doc.$id;
+              let parsedOffers = doc.offers;
+              if (typeof doc.offers === 'string') {
+                try {
+                  parsedOffers = JSON.parse(doc.offers);
+                } catch {}
+              }
+              const rideFromDoc: MotorideRide = {
+                ...doc,
+                id: rideId,
+                offers: Array.isArray(parsedOffers) ? parsedOffers : [],
+              } as MotorideRide;
+
+              const existing = localRidesStore.get(rideId) || map.get(rideId) || ({} as MotorideRide);
               const merged: MotorideRide = {
                 ...existing,
-                ...r,
-                captain_name: r.captain_name || existing.captain_name,
-                captain_phone: r.captain_phone || existing.captain_phone,
-                vehicle_model: r.vehicle_model || existing.vehicle_model,
-                plate_number: r.plate_number || existing.plate_number,
-                captain_avatar: (r as any).captain_avatar || (existing as any).captain_avatar,
+                ...rideFromDoc,
+                offers: rideFromDoc.offers && rideFromDoc.offers.length > 0 ? rideFromDoc.offers : (existing.offers || []),
+                captain_name: rideFromDoc.captain_name || existing.captain_name,
+                captain_phone: rideFromDoc.captain_phone || existing.captain_phone,
+                vehicle_model: rideFromDoc.vehicle_model || existing.vehicle_model,
+                plate_number: rideFromDoc.plate_number || existing.plate_number,
+                captain_avatar: (rideFromDoc as any).captain_avatar || (existing as any).captain_avatar,
               };
-              map.set(r.id, merged);
-              localRidesStore.set(r.id, merged);
+              map.set(rideId, merged);
+              localRidesStore.set(rideId, merged);
             }
           });
           saveLocalRides();
@@ -280,7 +379,12 @@ export const motorideApi = {
       try {
         const doc = await databases.getDocument(appwriteDatabaseId, 'rides', id).catch(() => null);
         if (doc) {
-          const ride = doc as unknown as MotorideRide;
+          const docId = doc.id || doc.$id;
+          let parsedOffers = doc.offers;
+          if (typeof doc.offers === 'string') {
+            try { parsedOffers = JSON.parse(doc.offers); } catch {}
+          }
+          const ride = { ...doc, id: docId, offers: Array.isArray(parsedOffers) ? parsedOffers : [] } as unknown as MotorideRide;
           localRidesStore.set(id, ride);
           saveLocalRides();
           return ride;
@@ -315,14 +419,7 @@ export const motorideApi = {
     realtimeSync.broadcast('RIDE_CREATED', payload);
 
     // 3. Post to Appwrite database if configured
-    const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
-      try {
-        await databases.createDocument(appwriteDatabaseId, 'rides', payload.id, payload).catch(() => {});
-      } catch (err) {
-        console.warn('Appwrite insert ride notice:', err);
-      }
-    }
+    await safeAppwriteCreateDocument('rides', payload.id, payload);
 
     // 4. Also post to backend if running
     safeFetchJson<{ ride?: MotorideRide }>(
@@ -372,14 +469,7 @@ export const motorideApi = {
     realtimeSync.broadcast('RIDE_ACCEPTED', updatedRide);
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
 
-    const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
-      try {
-        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, updatedRide).catch(() => {});
-      } catch (err) {
-        console.warn('Appwrite accept ride notice:', err);
-      }
-    }
+    await safeAppwriteUpdateDocument('rides', rideId, updatedRide);
 
     safeFetchJson<{ ride: MotorideRide }>(
       `${API_BASE}/rides/${rideId}/accept`,
@@ -430,14 +520,11 @@ export const motorideApi = {
     localRidesStore.set(rideId, updatedRide);
     saveLocalRides();
 
-    const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
-      try {
-        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, { status: 'captain_offered' }).catch(() => {});
-      } catch (err) {
-        console.warn('Appwrite counter offer notice:', err);
-      }
-    }
+    await safeAppwriteUpdateDocument('rides', rideId, {
+      status: 'captain_offered',
+      offers: updatedRide.offers,
+      updated_at: updatedRide.updated_at,
+    });
 
     const serverResult = await safeFetchJson<{ ride: MotorideRide; offer: RideOffer }>(
       `${API_BASE}/rides/${rideId}/offer`,
@@ -485,23 +572,17 @@ export const motorideApi = {
     realtimeSync.broadcast('RIDE_ACCEPTED', updatedRide);
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
 
-    const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
-      try {
-        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, {
-          status: 'captain_accepted',
-          captain_id: updatedRide.captain_id,
-          captain_name: updatedRide.captain_name,
-          captain_avatar: (updatedRide as any).captain_avatar,
-          captain_phone: updatedRide.captain_phone,
-          vehicle_model: updatedRide.vehicle_model,
-          plate_number: updatedRide.plate_number,
-          final_fare: updatedRide.final_fare,
-        }).catch(() => {});
-      } catch (err) {
-        console.warn('Appwrite accept counter offer notice:', err);
-      }
-    }
+    await safeAppwriteUpdateDocument('rides', rideId, {
+      status: 'captain_accepted',
+      captain_id: updatedRide.captain_id,
+      captain_name: updatedRide.captain_name,
+      captain_avatar: (updatedRide as any).captain_avatar,
+      captain_phone: updatedRide.captain_phone,
+      vehicle_model: updatedRide.vehicle_model,
+      plate_number: updatedRide.plate_number,
+      final_fare: updatedRide.final_fare,
+      updated_at: updatedRide.updated_at,
+    });
 
     const serverRes = await safeFetchJson<{ ride: MotorideRide }>(
       `${API_BASE}/rides/${rideId}/accept-offer`,
@@ -559,32 +640,25 @@ export const motorideApi = {
       realtimeSync.broadcast('EARNINGS_UPDATED', { captain_id: updatedRide.captain_id, ride: updatedRide });
     }
 
-    const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
-      try {
-        const updatePayload: any = {
-          status,
-          updated_at: new Date().toISOString(),
-        };
-        if (extra?.cancellation_reason) updatePayload.cancellation_reason = extra.cancellation_reason;
-        if (extra?.final_distance_km) updatePayload.distance_km = extra.final_distance_km;
-        if (extra?.final_fare) updatePayload.final_fare = extra.final_fare;
-        if (status === 'trip_started') updatePayload.trip_started_at = new Date().toISOString();
-        if (status === 'trip_completed' || status === 'completed') {
-          const nowIso = new Date().toISOString();
-          updatePayload.trip_completed_at = nowIso;
-          updatePayload.completed_at = nowIso;
-          updatePayload.payment_status = 'paid';
-          if (extra?.final_fare !== undefined) {
-            updatePayload.final_fare = extra.final_fare;
-            updatePayload.fare_amount = extra.final_fare;
-          }
-        }
-        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, updatePayload).catch(() => {});
-      } catch (err) {
-        console.warn('Appwrite status update notice:', err);
+    const updatePayload: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+    if (extra?.cancellation_reason) updatePayload.cancellation_reason = extra.cancellation_reason;
+    if (extra?.final_distance_km) updatePayload.distance_km = extra.final_distance_km;
+    if (extra?.final_fare) updatePayload.final_fare = extra.final_fare;
+    if (status === 'trip_started') updatePayload.trip_started_at = new Date().toISOString();
+    if (status === 'trip_completed' || status === 'completed') {
+      const nowIso = new Date().toISOString();
+      updatePayload.trip_completed_at = nowIso;
+      updatePayload.completed_at = nowIso;
+      updatePayload.payment_status = 'paid';
+      if (extra?.final_fare !== undefined) {
+        updatePayload.final_fare = extra.final_fare;
+        updatePayload.fare_amount = extra.final_fare;
       }
     }
+    await safeAppwriteUpdateDocument('rides', rideId, updatePayload);
 
     safeFetchJson<{ ride: MotorideRide }>(
       `${API_BASE}/rides/${rideId}/status`,

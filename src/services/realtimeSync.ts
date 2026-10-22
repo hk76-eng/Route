@@ -1,4 +1,4 @@
-import { getAppwriteRealtime, isAppwriteConfigured } from '../lib/appwrite';
+import { getAppwriteRealtime, isAppwriteConfigured, appwriteDatabaseId } from '../lib/appwrite';
 import { MotorideRide } from '../types/motoride';
 
 type EventCallback = (payload: any) => void;
@@ -9,6 +9,7 @@ class RealtimeSyncManager {
   private isConnected: boolean = false;
   private reconnectTimeout: any = null;
   private appwriteRealtime: any = null;
+  private appwriteSubscribers: (() => void)[] = [];
 
   constructor() {
     this.init();
@@ -17,16 +18,7 @@ class RealtimeSyncManager {
   private init() {
     // 1. Initialize Appwrite Realtime if configured
     if (isAppwriteConfigured()) {
-      const rt = getAppwriteRealtime();
-      if (rt) {
-        try {
-          this.appwriteRealtime = rt;
-          this.isConnected = true;
-          this.emit('CONNECTION_STATUS', { connected: true, type: 'appwrite_realtime' });
-        } catch (err) {
-          console.warn('Appwrite Realtime setup warning:', err);
-        }
-      }
+      this.setupAppwriteRealtime();
     }
 
     // 2. Initialize Shared Backend SSE stream if available
@@ -54,12 +46,88 @@ class RealtimeSyncManager {
           if (!this.isConnected || !this.sseSource || this.sseSource.readyState === EventSource.CLOSED) {
             this.connectSSE();
           }
+          this.setupAppwriteRealtime();
           this.requestSync();
         }
       };
       window.addEventListener('visibilitychange', handleWake);
       window.addEventListener('focus', handleWake);
       window.addEventListener('online', handleWake);
+    }
+  }
+
+  private setupAppwriteRealtime() {
+    const rt = getAppwriteRealtime();
+    if (!rt || !isAppwriteConfigured()) return;
+
+    try {
+      // Clear previous subscriptions
+      this.appwriteSubscribers.forEach((unsub) => {
+        try { unsub(); } catch {}
+      });
+      this.appwriteSubscribers = [];
+
+      this.appwriteRealtime = rt;
+
+      // Subscribe to rides collection documents
+      const ridesChannel = `databases.${appwriteDatabaseId}.collections.rides.documents`;
+      const unsubRides = rt.subscribe(ridesChannel, (response: any) => {
+        const payload = response.payload;
+        const events: string[] = response.events || [];
+        if (!payload) return;
+
+        const rideId = payload.id || payload.$id;
+        if (!rideId) return;
+
+        let parsedOffers = payload.offers;
+        if (typeof payload.offers === 'string') {
+          try { parsedOffers = JSON.parse(payload.offers); } catch {}
+        }
+
+        const rideData: MotorideRide = {
+          ...payload,
+          id: rideId,
+          offers: Array.isArray(parsedOffers) ? parsedOffers : [],
+        } as MotorideRide;
+
+        const isCreate = events.some((e: string) => e.includes('.create'));
+        const isUpdate = events.some((e: string) => e.includes('.update'));
+
+        if (isCreate || (rideData.status === 'requested' && isUpdate)) {
+          this.emit('RIDE_CREATED', rideData, true);
+        } else if (rideData.status === 'captain_offered') {
+          const offers = rideData.offers || [];
+          const lastOffer = offers[offers.length - 1];
+          this.emit('RIDE_OFFER_RECEIVED', { ride: rideData, offer: lastOffer }, true);
+          this.emit('RIDE_UPDATED', rideData, true);
+        } else if (rideData.status === 'captain_accepted') {
+          this.emit('RIDE_ACCEPTED', rideData, true);
+          this.emit('RIDE_UPDATED', rideData, true);
+        } else {
+          this.emit('RIDE_UPDATED', rideData, true);
+        }
+      });
+
+      if (typeof unsubRides === 'function') {
+        this.appwriteSubscribers.push(unsubRides);
+      }
+
+      // Subscribe to passenger locations collection
+      const locChannel = `databases.${appwriteDatabaseId}.collections.passenger_locations.documents`;
+      const unsubLoc = rt.subscribe(locChannel, (response: any) => {
+        const payload = response.payload;
+        if (payload) {
+          this.emit('PASSENGER_LOCATION_UPDATED', payload, true);
+        }
+      });
+      if (typeof unsubLoc === 'function') {
+        this.appwriteSubscribers.push(unsubLoc);
+      }
+
+      this.isConnected = true;
+      this.emit('CONNECTION_STATUS', { connected: true, type: 'appwrite_realtime' });
+    } catch (err) {
+      console.warn('Appwrite Realtime setup warning:', err);
     }
   }
 
