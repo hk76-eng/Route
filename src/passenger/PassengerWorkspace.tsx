@@ -4,6 +4,7 @@ import {
   RideOffer,
   RideTypeCode,
   FareSettings,
+  DEFAULT_MOTORIDE_FARE_SETTINGS,
 } from '../types/motoride';
 import { MotorideMap, AvailableCaptainItem } from '../components/common/MotorideMap';
 import { RideChatModal } from '../components/common/RideChatModal';
@@ -50,6 +51,7 @@ import {
   Loader2,
   ArrowLeft,
   History,
+  Calculator,
 } from 'lucide-react';
 
 import { AuthUser, appwriteAuth as supabaseAuth } from '../lib/appwriteAuth';
@@ -300,15 +302,22 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   };
   const [fareSettings, setFareSettings] = useState<FareSettings>(() => {
     try {
-      const saved = localStorage.getItem('motoride_admin_fare_settings');
-      if (saved) return JSON.parse(saved);
+      const saved = safeStorage.getItem('motoride_admin_fare_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...parsed,
+          ride_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges, ...(parsed.ride_charges || {}) },
+          courier_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges, ...(parsed.courier_charges || {}) },
+        };
+      }
     } catch {}
-    return {
-      currency_symbol: '₹',
-      ride_charges: {},
-      courier_charges: {},
-    } as any;
+    return DEFAULT_MOTORIDE_FARE_SETTINGS;
   });
+
+  // Dedicated Fare Calculating Breakdown Tab Visibility
+  const [showFareBreakdown, setShowFareBreakdown] = useState<boolean>(false);
 
   // Trip Completed Rating State
   const [ratingScore, setRatingScore] = useState(5);
@@ -332,43 +341,82 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
   const hasSelectedLocations = Boolean(pickup.name?.trim() && dropoff.name?.trim());
 
+  // Calculate real distance or minimum 1.0 km
   const distanceKm = hasSelectedLocations
     ? Math.max(1.0, calculateDistance(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng))
-    : 0;
-  const durationMin = hasSelectedLocations ? Math.round(distanceKm * 2.8 + 4) : 0;
+    : 1.0;
+  const durationMin = Math.max(3, Math.round(distanceKm * 2.8 + 4));
 
   // Dedicated separate pricing by service type (Ride vs Courier)
-  const rideConfig = fareSettings.ride_charges || {};
-  const courierConfig = fareSettings.courier_charges || {};
+  const rideConfig = fareSettings.ride_charges || DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges || {};
+  const courierConfig = fareSettings.courier_charges || DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges || {};
 
-  let estimatedFare = 0;
-  if (hasSelectedLocations) {
-    const cc = courierConfig as any;
-    const rc = rideConfig as any;
-    if (rideType === 'courier') {
-      const base = (cc.base_fare ?? fareSettings.base_fare ?? 0) + (cc.handling_fee ?? 0);
-      const rate = cc.per_km_rate ?? fareSettings.per_km_rate ?? 0;
-      const minFare = cc.minimum_fare ?? fareSettings.minimum_fare ?? 0;
-      const running = distanceKm * rate;
-      estimatedFare = Math.max(minFare, Math.round(base + running));
-    } else {
-      const multiplier =
-        rideType === 'auto'
-          ? (rc.auto_multiplier || 1.25)
-          : rideType === 'car'
-          ? (rc.car_multiplier || 1.8)
-          : 1.0;
-      const base = rc.base_fare ?? fareSettings.base_fare ?? 0;
-      const rate = rc.per_km_rate ?? fareSettings.per_km_rate ?? 0;
-      const minFare = rc.minimum_fare ?? fareSettings.minimum_fare ?? 0;
-      const running = distanceKm * rate;
-      estimatedFare = Math.max(minFare, Math.round((base + running) * multiplier));
-    }
+  const cc = courierConfig as any;
+  const rc = rideConfig as any;
+
+  let estimatedFare = 30;
+  let calculationDetails = {
+    serviceName: 'MotoBike Ride',
+    baseFare: 25,
+    perKmRate: 12,
+    distanceKm,
+    durationMin,
+    distanceCharge: Math.round(distanceKm * 12),
+    multiplier: 1.0,
+    handlingFee: 0,
+    minimumFare: 30,
+    totalCalculated: 30,
+  };
+
+  if (rideType === 'courier') {
+    const base = (cc.base_fare ?? 35) + (cc.handling_fee ?? 10);
+    const rate = cc.per_km_rate ?? 14;
+    const minFare = cc.minimum_fare ?? 40;
+    const running = distanceKm * rate;
+    estimatedFare = Math.max(minFare, Math.round(base + running));
+    calculationDetails = {
+      serviceName: 'Courier Parcel Delivery',
+      baseFare: cc.base_fare ?? 35,
+      perKmRate: rate,
+      distanceKm,
+      durationMin,
+      distanceCharge: Math.round(running),
+      multiplier: 1.0,
+      handlingFee: cc.handling_fee ?? 10,
+      minimumFare: minFare,
+      totalCalculated: estimatedFare,
+    };
+  } else {
+    const multiplier =
+      rideType === 'auto'
+        ? (rc.auto_multiplier || 1.25)
+        : rideType === 'car'
+        ? (rc.car_multiplier || 1.8)
+        : 1.0;
+    const base = rc.base_fare ?? fareSettings.base_fare ?? 25;
+    const rate = rc.per_km_rate ?? fareSettings.per_km_rate ?? 12;
+    const minFare = rc.minimum_fare ?? fareSettings.minimum_fare ?? 30;
+    const running = distanceKm * rate;
+    estimatedFare = Math.max(minFare, Math.round((base + running) * multiplier));
+    calculationDetails = {
+      serviceName: rideType === 'bike' ? 'MotoBike Ride' : rideType === 'auto' ? 'Auto Rickshaw' : 'Car Cab',
+      baseFare: base,
+      perKmRate: rate,
+      distanceKm,
+      durationMin,
+      distanceCharge: Math.round(running),
+      multiplier,
+      handlingFee: 0,
+      minimumFare: minFare,
+      totalCalculated: estimatedFare,
+    };
   }
 
   // Auto-align offered fare with estimated fare when endpoints/type change
   useEffect(() => {
-    setOfferedFare(estimatedFare);
+    if (estimatedFare > 0) {
+      setOfferedFare(estimatedFare);
+    }
   }, [estimatedFare]);
 
   // 5-second interval ticker for stale location detection (>30s)
@@ -2063,6 +2111,70 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
             {/* Fare & Payment Control Card */}
             <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-black flex flex-col gap-3 shadow-xs">
+              {/* Fare Calculation & Breakdown Tab Button */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-black shadow-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-black text-white flex items-center justify-center shrink-0">
+                    <Calculator className="w-4 h-4 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-black text-black block leading-none">
+                      Fare Calculation Tab
+                    </span>
+                    <span className="text-[10px] text-slate-600 font-semibold">
+                      {distanceKm} km • ~{durationMin} min • Est: ₹{estimatedFare}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowFareBreakdown((prev) => !prev)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-black text-[11px] font-bold border border-black flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                >
+                  <span>{showFareBreakdown ? 'Hide Breakdown' : 'View Breakdown'}</span>
+                  {showFareBreakdown ? <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />}
+                </button>
+              </div>
+
+              {/* Collapsible Fare Calculation Breakdown Details */}
+              {showFareBreakdown && (
+                <div className="p-3 rounded-xl bg-white border border-black space-y-1.5 text-xs animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 text-slate-700 font-semibold text-[11px]">
+                    <span>Service:</span>
+                    <span className="font-bold text-black">{calculationDetails.serviceName}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
+                    <span>Base Starting Fare:</span>
+                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.baseFare}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
+                    <span>Distance Charge ({calculationDetails.distanceKm} km @ ₹{calculationDetails.perKmRate}/km):</span>
+                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.distanceCharge}</span>
+                  </div>
+                  {calculationDetails.multiplier > 1.0 && (
+                    <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
+                      <span>Vehicle Multiplier:</span>
+                      <span className="font-bold text-black font-mono-num">{calculationDetails.multiplier}x</span>
+                    </div>
+                  )}
+                  {calculationDetails.handlingFee > 0 && (
+                    <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
+                      <span>Parcel Handling Fee:</span>
+                      <span className="font-bold text-black font-mono-num">₹{calculationDetails.handlingFee}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
+                    <span>Minimum Fare Floor:</span>
+                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.minimumFare}</span>
+                  </div>
+                  <div className="flex items-center justify-between pt-1.5 border-t border-black font-black text-black text-xs">
+                    <span>Calculated Standard Fare:</span>
+                    <span className="text-sm font-mono-num text-black font-black">₹{estimatedFare}</span>
+                  </div>
+                </div>
+              )}
+
               {/* Fare Stepper: (-) Fare ₹ 0 (+) comment box icon */}
               <div className="flex items-center gap-2">
                 <button

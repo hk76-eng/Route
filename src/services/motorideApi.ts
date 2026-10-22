@@ -3,6 +3,7 @@ import {
   Captain,
   Passenger,
   FareSettings,
+  DEFAULT_MOTORIDE_FARE_SETTINGS,
   QRCodeSetting,
   WalletTransaction,
   MotorideNotification,
@@ -1045,26 +1046,57 @@ export const motorideApi = {
     try {
       const local = safeStorage.getItem('motoride_admin_fare_settings');
       if (local) {
-        return JSON.parse(local);
+        const parsed = JSON.parse(local);
+        return {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...parsed,
+          ride_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+            ...(parsed.ride_charges || {}),
+          },
+          courier_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+            ...(parsed.courier_charges || {}),
+          },
+        };
       }
     } catch {}
     const supabase = getSupabase();
     if (supabase) {
       try {
         const { data } = await supabase.from('fare_settings').select('*').limit(1).maybeSingle();
-        if (data) return data as FareSettings;
+        if (data && data.base_fare) {
+          return {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+            ...data,
+            ride_charges: {
+              ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+              ...(data.ride_charges || {}),
+            },
+            courier_charges: {
+              ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+              ...(data.courier_charges || {}),
+            },
+          };
+        }
       } catch {}
     }
     const json = await safeFetchJson<{ settings: FareSettings }>(`${API_BASE}/fare-settings`, undefined, {
-      settings: {
-        id: 'default',
-        currency_symbol: '₹',
-        updated_at: new Date().toISOString(),
-        ride_charges: {},
-        courier_charges: {},
-      } as FareSettings,
+      settings: DEFAULT_MOTORIDE_FARE_SETTINGS,
     });
-    return json.settings;
+    const returned = json.settings || DEFAULT_MOTORIDE_FARE_SETTINGS;
+    return {
+      ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+      ...returned,
+      ride_charges: {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+        ...(returned.ride_charges || {}),
+      },
+      courier_charges: {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+        ...(returned.courier_charges || {}),
+      },
+    };
   },
 
   async updateFareSettings(settings: Partial<FareSettings>): Promise<FareSettings> {

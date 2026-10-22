@@ -18,6 +18,77 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script>
+      // SafeStorage Global Fallback for Mobile WebViews, Sandboxed Iframes, and Appwrite Hosting
+      (function() {
+        var memoryStore = {};
+        var hasLocal = false;
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('__mt_test__', '1');
+            window.localStorage.removeItem('__mt_test__');
+            hasLocal = true;
+          }
+        } catch (e) {
+          hasLocal = false;
+        }
+
+        var storageObj = {
+          getItem: function(key) {
+            try {
+              if (hasLocal && window.localStorage) {
+                var v = window.localStorage.getItem(key);
+                if (v !== null) return v;
+              }
+            } catch (e) {}
+            return memoryStore[key] || null;
+          },
+          setItem: function(key, val) {
+            try {
+              memoryStore[key] = String(val);
+              if (hasLocal && window.localStorage) {
+                window.localStorage.setItem(key, String(val));
+              }
+            } catch (e) {}
+          },
+          removeItem: function(key) {
+            try {
+              delete memoryStore[key];
+              if (hasLocal && window.localStorage) {
+                window.localStorage.removeItem(key);
+              }
+            } catch (e) {}
+          },
+          clear: function() {
+            try {
+              memoryStore = {};
+              if (hasLocal && window.localStorage) {
+                window.localStorage.clear();
+              }
+            } catch (e) {}
+          },
+          getJSON: function(key, fallback) {
+            try {
+              var raw = this.getItem(key);
+              return raw ? JSON.parse(raw) : fallback;
+            } catch (e) {
+              return fallback;
+            }
+          },
+          setJSON: function(key, val) {
+            try {
+              this.setItem(key, JSON.stringify(val));
+            } catch (e) {}
+          }
+        };
+
+        window.safeStorage = storageObj;
+        try {
+          globalThis.safeStorage = storageObj;
+        } catch (e) {}
+      })();
+      var safeStorage = window.safeStorage;
+    </script>
+    <script>
       // Suppress benign Vite HMR WebSocket connection errors in sandbox iframe environment
       (function() {
         function isViteHmrError(err) {

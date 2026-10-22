@@ -1,3 +1,4 @@
+import '../../lib/safeStorage';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { CaptainApp } from './CaptainApp';

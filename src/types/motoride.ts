@@ -183,6 +183,44 @@ export interface FareSettings {
   courier_charges?: CourierChargeSettings;
 }
 
+export const DEFAULT_MOTORIDE_FARE_SETTINGS: FareSettings = {
+  id: 'default',
+  base_fare: 25.0,
+  per_km_rate: 12.0,
+  minimum_fare: 30.0,
+  platform_commission_pct: 10.0,
+  min_offer_pct: 70.0,
+  max_offer_pct: 180.0,
+  currency_symbol: '₹',
+  updated_at: new Date().toISOString(),
+  ride_charges: {
+    base_fare: 25.0,
+    per_km_rate: 12.0,
+    minimum_fare: 30.0,
+    platform_commission_pct: 10.0,
+    min_offer_pct: 70.0,
+    max_offer_pct: 180.0,
+    night_surcharge_pct: 10.0,
+    auto_multiplier: 1.25,
+    car_multiplier: 1.8,
+    cancellation_fee: 20.0,
+    updated_at: new Date().toISOString(),
+  },
+  courier_charges: {
+    base_fare: 35.0,
+    per_km_rate: 14.0,
+    minimum_fare: 40.0,
+    platform_commission_pct: 12.0,
+    min_offer_pct: 70.0,
+    max_offer_pct: 180.0,
+    handling_fee: 10.0,
+    express_surcharge: 15.0,
+    max_weight_kg: 15.0,
+    cancellation_fee: 25.0,
+    updated_at: new Date().toISOString(),
+  },
+};
+
 export interface RideTypeConfig {
   key: RideTypeCode;
   name: string;

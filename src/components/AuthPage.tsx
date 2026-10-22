@@ -359,7 +359,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
               </div>
 
               {/* 2. Sign In vs Sign Up Mode Switcher */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-black rounded-2xl border border-white/25 mb-6">
+              <div className="grid grid-cols-2 gap-2 p-1.5 bg-neutral-950 rounded-2xl border border-white/30 mb-6">
                 <button
                   type="button"
                   onClick={() => {
@@ -371,14 +371,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                       if (candidate) setSignInEmail(candidate);
                     }
                   }}
-                  className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
                     authMode === 'signin'
-                      ? 'bg-black text-white shadow-md border border-white font-black'
-                      : 'text-white/60 hover:text-white bg-black hover:bg-neutral-950'
+                      ? 'bg-white text-black font-black shadow-lg shadow-white/10 ring-2 ring-white'
+                      : 'text-white/80 hover:text-white bg-white/5 hover:bg-white/10 border border-white/20'
                   }`}
                 >
-                  <Key className="w-4 h-4 text-white stroke-[2.5]" />
-                  <span className="text-white">Sign In</span>
+                  <Key className={`w-4 h-4 stroke-[2.5] ${authMode === 'signin' ? 'text-black' : 'text-white'}`} />
+                  <span className={authMode === 'signin' ? 'text-black font-black' : 'text-white'}>Sign In</span>
                 </button>
 
                 <button
@@ -388,14 +388,14 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                     setErrorMessage(null);
                     setSuccessMessage(null);
                   }}
-                  className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                  className={`py-3 px-3 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
                     authMode === 'signup'
-                      ? 'bg-black text-white shadow-md border border-white font-black'
-                      : 'text-white/60 hover:text-white bg-black hover:bg-neutral-950'
+                      ? 'bg-white text-black font-black shadow-lg shadow-white/10 ring-2 ring-white'
+                      : 'text-white/80 hover:text-white bg-white/5 hover:bg-white/10 border border-white/20'
                   }`}
                 >
-                  <ShieldCheck className="w-4 h-4 text-white stroke-[2.5]" />
-                  <span className="text-white">Create Account</span>
+                  <ShieldCheck className={`w-4 h-4 stroke-[2.5] ${authMode === 'signup' ? 'text-black' : 'text-white'}`} />
+                  <span className={authMode === 'signup' ? 'text-black font-black' : 'text-white'}>Create Account</span>
                 </button>
               </div>
 
@@ -478,20 +478,35 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer disabled:opacity-50 bg-black hover:bg-neutral-900 text-white border-2 border-white shadow-black/80 ring-1 ring-white/20"
+                    className="w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer disabled:opacity-50 bg-white hover:bg-slate-100 text-black border-2 border-white shadow-black/80 ring-1 ring-white/20"
                   >
                     {isLoading ? (
-                      <span className="flex items-center gap-2 text-white">
-                        <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        <span className="text-white">Authenticating...</span>
+                      <span className="flex items-center gap-2 text-black">
+                        <span className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                        <span className="text-black">Authenticating...</span>
                       </span>
                     ) : (
                       <>
-                        <span className="text-white">Sign In to {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Dashboard</span>
-                        <ArrowRight className="w-4 h-4 text-white stroke-[2.5]" />
+                        <span className="text-black font-black">Sign In to {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Dashboard</span>
+                        <ArrowRight className="w-4 h-4 text-black stroke-[2.5]" />
                       </>
                     )}
                   </button>
+
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('signup');
+                        setErrorMessage(null);
+                        setSuccessMessage(null);
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white/90 hover:text-white bg-white/10 hover:bg-white/15 border border-white/25 transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>New here? Create {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Account</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-white" />
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -787,20 +802,37 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer disabled:opacity-50 bg-black hover:bg-neutral-900 text-white border-2 border-white shadow-black/80 ring-1 ring-white/20"
+                    className="w-full py-3.5 px-4 rounded-2xl font-black text-xs sm:text-sm shadow-xl transition-all flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer disabled:opacity-50 bg-white hover:bg-slate-100 text-black border-2 border-white shadow-black/80 ring-1 ring-white/20"
                   >
                     {isLoading ? (
-                      <span className="flex items-center gap-2 text-white">
-                        <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        <span className="text-white">Registering...</span>
+                      <span className="flex items-center gap-2 text-black">
+                        <span className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                        <span className="text-black">Registering...</span>
                       </span>
                     ) : (
                       <>
-                        <span className="text-white">Create {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Account</span>
-                        <ArrowRight className="w-4 h-4 text-white stroke-[2.5]" />
+                        <span className="text-black font-black">Create {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} Account</span>
+                        <ArrowRight className="w-4 h-4 text-black stroke-[2.5]" />
                       </>
                     )}
                   </button>
+
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthMode('signin');
+                        setErrorMessage(null);
+                        setSuccessMessage(null);
+                        const candidate = psgEmail || cptEmail || admEmail;
+                        if (candidate) setSignInEmail(candidate);
+                      }}
+                      className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Key className="w-3.5 h-3.5 text-white" />
+                      <span>Already have an account? Click to Sign In</span>
+                    </button>
+                  </div>
                 </form>
               )}
 
