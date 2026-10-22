@@ -43,37 +43,54 @@ async function safeAppwriteCreateDocument(
   const databases = getAppwriteDatabases();
   if (!databases || !isAppwriteConfigured()) return false;
 
-  try {
-    const permissions = [
-      Permission.read(Role.any()),
-      Permission.write(Role.any()),
-      Permission.update(Role.any()),
-      Permission.delete(Role.any()),
-    ];
-    const sanitized = sanitizeForAppwrite(data);
-    await databases.createDocument(appwriteDatabaseId, collectionId, documentId, sanitized, permissions);
-    return true;
-  } catch (err: any) {
+  let currentData = sanitizeForAppwrite(data);
+  const maxRetries = 10;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const sanitized = sanitizeForAppwrite(data);
-      await databases.createDocument(appwriteDatabaseId, collectionId, documentId, sanitized);
+      const permissions = [
+        Permission.read(Role.any()),
+        Permission.write(Role.any()),
+        Permission.update(Role.any()),
+        Permission.delete(Role.any()),
+      ];
+      await databases.createDocument(appwriteDatabaseId, collectionId, documentId, currentData, permissions);
       return true;
-    } catch (err2: any) {
+    } catch (err: any) {
+      const msg = err?.message || err?.toString() || '';
+      console.warn(`Appwrite createDocument attempt ${attempt + 1} for ${collectionId} notice:`, msg);
+
+      const match = msg.match(/Unknown attribute:\s*"([^"]+)"/) || msg.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
+      if (match && match[1] && currentData[match[1]] !== undefined) {
+        delete currentData[match[1]];
+        continue;
+      }
+
       try {
-        const primitiveData: Record<string, any> = {};
-        for (const [k, v] of Object.entries(data)) {
-          if (v !== undefined && v !== null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
-            primitiveData[k] = v;
-          }
-        }
-        await databases.createDocument(appwriteDatabaseId, collectionId, documentId, primitiveData);
+        await databases.createDocument(appwriteDatabaseId, collectionId, documentId, currentData);
         return true;
-      } catch (err3: any) {
-        console.warn(`Appwrite createDocument notice for ${collectionId}:`, err3?.message || err3);
-        return false;
+      } catch (err2: any) {
+        const msg2 = err2?.message || err2?.toString() || '';
+        const match2 = msg2.match(/Unknown attribute:\s*"([^"]+)"/) || msg2.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
+        if (match2 && match2[1] && currentData[match2[1]] !== undefined) {
+          delete currentData[match2[1]];
+          continue;
+        }
+
+        if (attempt === 0) {
+          const coreKeys = ['id', 'passenger_id', 'passenger_name', 'passenger_phone', 'pickup_address', 'pickup_lat', 'pickup_lng', 'dropoff_address', 'dropoff_lat', 'dropoff_lng', 'offered_fare', 'final_fare', 'ride_type', 'status', 'created_at', 'updated_at'];
+          const filtered: Record<string, any> = {};
+          for (const k of coreKeys) {
+            if (currentData[k] !== undefined) filtered[k] = currentData[k];
+          }
+          currentData = filtered;
+        } else {
+          break;
+        }
       }
     }
   }
+  return false;
 }
 
 async function safeAppwriteUpdateDocument(
@@ -84,25 +101,26 @@ async function safeAppwriteUpdateDocument(
   const databases = getAppwriteDatabases();
   if (!databases || !isAppwriteConfigured()) return false;
 
-  try {
-    const sanitized = sanitizeForAppwrite(data);
-    await databases.updateDocument(appwriteDatabaseId, collectionId, documentId, sanitized);
-    return true;
-  } catch (err: any) {
+  let currentData = sanitizeForAppwrite(data);
+  const maxRetries = 10;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const primitiveData: Record<string, any> = {};
-      for (const [k, v] of Object.entries(data)) {
-        if (v !== undefined && v !== null && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) {
-          primitiveData[k] = v;
-        }
-      }
-      await databases.updateDocument(appwriteDatabaseId, collectionId, documentId, primitiveData);
+      await databases.updateDocument(appwriteDatabaseId, collectionId, documentId, currentData);
       return true;
-    } catch (err2: any) {
-      console.warn(`Appwrite updateDocument notice for ${collectionId}:`, err2?.message || err2);
-      return false;
+    } catch (err: any) {
+      const msg = err?.message || err?.toString() || '';
+      console.warn(`Appwrite updateDocument attempt ${attempt + 1} for ${collectionId} notice:`, msg);
+
+      const match = msg.match(/Unknown attribute:\s*"([^"]+)"/) || msg.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
+      if (match && match[1] && currentData[match[1]] !== undefined) {
+        delete currentData[match[1]];
+        continue;
+      }
+      break;
     }
   }
+  return false;
 }
 
 // Local and cross-browser memory store for resilient instant sync

@@ -916,6 +916,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
             captain_avatar: (active as any).captain_avatar || (active as any).avatar_url || (prev as any).captain_avatar || (prev as any).avatar_url,
           };
         });
+      } else {
+        setActiveRide(null);
       }
     } catch {}
   };
