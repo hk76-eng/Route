@@ -1,5 +1,20 @@
 export type UserRole = 'passenger' | 'captain' | 'admin';
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  phone?: string;
+  avatarUrl?: string;
+  vehicleModel?: string;
+  plateNumber?: string;
+  vehicleType?: RideTypeCode;
+  walletBalance?: number;
+  memberSince?: string;
+  passwordHash?: string;
+}
+
 export type MotorideRideStatus =
   | 'requested'
   | 'captain_offered'

@@ -1,4 +1,5 @@
 import { AuthUser, UserRole } from '../types/motoride';
+export type { AuthUser, UserRole };
 import {
   getAppwriteAccount,
   getAppwriteDatabases,

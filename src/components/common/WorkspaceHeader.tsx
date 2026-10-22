@@ -6,7 +6,7 @@ import {
   ArrowLeftRight,
   Shield,
 } from 'lucide-react';
-import { AuthUser } from '../../lib/supabaseAuth';
+import { AuthUser } from '../../types/motoride';
 
 interface WorkspaceHeaderProps {
   currentRole: UserRole;

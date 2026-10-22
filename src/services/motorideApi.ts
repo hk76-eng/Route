@@ -206,21 +206,13 @@ export const motorideApi = {
       saveLocalRides();
     }
 
-    // 3. Fetch from Supabase PostgreSQL if table exists
-    const supabase = getSupabase();
-    if (supabase) {
+    // 3. Fetch from Appwrite Cloud Database if configured
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        let query = supabase.from('rides').select('*').order('created_at', { ascending: false });
-        if (params?.active_for_captain) {
-          query = query.in('status', ['requested', 'captain_offered']);
-        } else {
-          if (params?.status && params.status !== 'all') query = query.eq('status', params.status);
-          if (params?.passenger_id) query = query.eq('passenger_id', params.passenger_id);
-          if (params?.captain_id) query = query.eq('captain_id', params.captain_id);
-        }
-        const { data, error } = await query;
-        if (!error && data && Array.isArray(data)) {
-          (data as MotorideRide[]).forEach((r) => {
+        const res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch(() => null);
+        if (res?.documents && Array.isArray(res.documents)) {
+          (res.documents as unknown as MotorideRide[]).forEach((r) => {
             if (r && r.id) {
               const existing = localRidesStore.get(r.id) || map.get(r.id) || ({} as MotorideRide);
               const merged: MotorideRide = {
@@ -239,7 +231,7 @@ export const motorideApi = {
           saveLocalRides();
         }
       } catch (err) {
-        console.warn('Supabase getRides notice:', err);
+        console.warn('Appwrite getRides notice:', err);
       }
     }
 
@@ -283,17 +275,18 @@ export const motorideApi = {
       return json.ride;
     }
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        const { data, error } = await supabase.from('rides').select('*').eq('id', id).single();
-        if (!error && data) {
-          localRidesStore.set(id, data as MotorideRide);
+        const doc = await databases.getDocument(appwriteDatabaseId, 'rides', id).catch(() => null);
+        if (doc) {
+          const ride = doc as unknown as MotorideRide;
+          localRidesStore.set(id, ride);
           saveLocalRides();
-          return data as MotorideRide;
+          return ride;
         }
       } catch (err) {
-        console.warn('Supabase getRideById notice:', err);
+        console.warn('Appwrite getRideById notice:', err);
       }
     }
 
@@ -318,16 +311,16 @@ export const motorideApi = {
     localRidesStore.set(payload.id, payload);
     saveLocalRides();
 
-    // 2. Broadcast immediately over Supabase Realtime to ALL connected captains & browsers
+    // 2. Broadcast immediately over Realtime (Appwrite / SSE / BroadcastChannel)
     realtimeSync.broadcast('RIDE_CREATED', payload);
 
-    // 3. Post to Supabase database if tables exist
-    const supabase = getSupabase();
-    if (supabase) {
+    // 3. Post to Appwrite database if configured
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('rides').insert([payload]);
+        await databases.createDocument(appwriteDatabaseId, 'rides', payload.id, payload).catch(() => {});
       } catch (err) {
-        console.warn('Supabase insert ride notice:', err);
+        console.warn('Appwrite insert ride notice:', err);
       }
     }
 
@@ -379,36 +372,12 @@ export const motorideApi = {
     realtimeSync.broadcast('RIDE_ACCEPTED', updatedRide);
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        const { data, error } = await supabase.rpc('accept_ride_atomic', {
-          p_ride_id: rideId,
-          p_captain_id: captainData.captain_id,
-          p_captain_name: captainData.captain_name,
-          p_captain_phone: captainData.captain_phone || '',
-          p_vehicle_model: captainData.vehicle_model || '',
-          p_plate_number: captainData.plate_number || '',
-          p_accepted_fare: captainData.accepted_fare || 0,
-        });
-        if (!error && data?.success && data.ride) {
-          const mergedRide = {
-            ...updatedRide,
-            ...(data.ride as MotorideRide),
-            captain_name: data.ride.captain_name || updatedRide.captain_name,
-            captain_phone: data.ride.captain_phone || updatedRide.captain_phone,
-            vehicle_model: data.ride.vehicle_model || updatedRide.vehicle_model,
-            plate_number: data.ride.plate_number || updatedRide.plate_number,
-            captain_avatar: (data.ride as any).captain_avatar || (updatedRide as any).captain_avatar,
-          };
-          localRidesStore.set(rideId, mergedRide);
-          saveLocalRides();
-          return mergedRide;
-        } else {
-          await supabase.from('rides').update(updatedRide).eq('id', rideId);
-        }
+        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, updatedRide).catch(() => {});
       } catch (err) {
-        console.warn('Supabase accept ride notice:', err);
+        console.warn('Appwrite accept ride notice:', err);
       }
     }
 
@@ -461,13 +430,12 @@ export const motorideApi = {
     localRidesStore.set(rideId, updatedRide);
     saveLocalRides();
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('rides').update({ status: 'captain_offered' }).eq('id', rideId);
-        await supabase.from('ride_offers').insert([newOffer]);
+        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, { status: 'captain_offered' }).catch(() => {});
       } catch (err) {
-        console.warn('Supabase counter offer notice:', err);
+        console.warn('Appwrite counter offer notice:', err);
       }
     }
 
@@ -517,10 +485,10 @@ export const motorideApi = {
     realtimeSync.broadcast('RIDE_ACCEPTED', updatedRide);
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('rides').update({
+        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, {
           status: 'captain_accepted',
           captain_id: updatedRide.captain_id,
           captain_name: updatedRide.captain_name,
@@ -529,10 +497,9 @@ export const motorideApi = {
           vehicle_model: updatedRide.vehicle_model,
           plate_number: updatedRide.plate_number,
           final_fare: updatedRide.final_fare,
-        }).eq('id', rideId);
-        await supabase.from('ride_offers').update({ status: 'accepted' }).eq('id', offerId);
+        }).catch(() => {});
       } catch (err) {
-        console.warn('Supabase accept counter offer notice:', err);
+        console.warn('Appwrite accept counter offer notice:', err);
       }
     }
 
@@ -592,8 +559,8 @@ export const motorideApi = {
       realtimeSync.broadcast('EARNINGS_UPDATED', { captain_id: updatedRide.captain_id, ride: updatedRide });
     }
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
         const updatePayload: any = {
           status,
@@ -613,9 +580,9 @@ export const motorideApi = {
             updatePayload.fare_amount = extra.final_fare;
           }
         }
-        await supabase.from('rides').update(updatePayload).eq('id', rideId);
+        await databases.updateDocument(appwriteDatabaseId, 'rides', rideId, updatePayload).catch(() => {});
       } catch (err) {
-        console.warn('Supabase status update notice:', err);
+        console.warn('Appwrite status update notice:', err);
       }
     }
 
@@ -641,19 +608,19 @@ export const motorideApi = {
     review?: string;
     tags?: string[];
   }): Promise<boolean> {
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('ratings').insert([{
+        await databases.createDocument(appwriteDatabaseId, 'ratings', `rat_${Date.now()}`, {
           ride_id: payload.ride_id,
           passenger_id: payload.passenger_id,
           captain_id: payload.captain_id,
           score: payload.score,
           review: payload.review || (payload.tags && payload.tags.length > 0 ? payload.tags.join(', ') : ''),
           created_at: new Date().toISOString(),
-        }]);
+        }).catch(() => {});
       } catch (err) {
-        console.warn('Supabase rating save notice:', err);
+        console.warn('Appwrite rating save notice:', err);
       }
     }
     return true;
@@ -668,7 +635,7 @@ export const motorideApi = {
     }).catch(() => {});
   },
 
-  // Real-Time Captain Live Location (Continuous GPS tracking & Supabase sync)
+  // Real-Time Captain Live Location (Continuous GPS tracking)
   async updateCaptainLiveLocation(data: {
     captain_id: string;
     ride_id?: string | null;
@@ -688,39 +655,25 @@ export const motorideApi = {
       speed: data.speed,
     });
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('captains').update({
+        await databases.updateDocument(appwriteDatabaseId, 'captains', data.captain_id, {
           current_lat: data.latitude,
           current_lng: data.longitude,
           current_heading: data.heading ?? 0,
           updated_at: new Date().toISOString(),
-        }).eq('id', data.captain_id);
+        }).catch(() => {});
 
         if (data.ride_id) {
-          await supabase.from('rides').update({
+          await databases.updateDocument(appwriteDatabaseId, 'rides', data.ride_id, {
             captain_current_lat: data.latitude,
             captain_current_lng: data.longitude,
             updated_at: new Date().toISOString(),
-          }).eq('id', data.ride_id);
+          }).catch(() => {});
         }
-
-        await supabase.from('captain_locations').upsert(
-          {
-            captain_id: data.captain_id,
-            ride_id: data.ride_id || null,
-            latitude: data.latitude,
-            longitude: data.longitude,
-            accuracy: data.accuracy ?? null,
-            heading: data.heading ?? null,
-            speed: data.speed ?? null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'captain_id,ride_id' }
-        );
       } catch (err) {
-        console.warn('Supabase captain location update notice:', err);
+        console.warn('Appwrite captain location update notice:', err);
       }
     }
 
@@ -760,24 +713,21 @@ export const motorideApi = {
       speed: data.speed,
     });
 
-    const supabase = getSupabase();
-    if (supabase) {
+    const databases = getAppwriteDatabases();
+    if (databases && isAppwriteConfigured()) {
       try {
-        await supabase.from('passenger_locations').upsert(
-          {
-            passenger_id: data.passenger_id,
-            ride_id: data.ride_id || null,
-            latitude: data.latitude,
-            longitude: data.longitude,
-            accuracy: data.accuracy ?? null,
-            heading: data.heading ?? null,
-            speed: data.speed ?? null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'passenger_id,ride_id' }
-        );
+        await databases.createDocument(appwriteDatabaseId, 'passenger_locations', `ploc_${Date.now()}`, {
+          passenger_id: data.passenger_id,
+          ride_id: data.ride_id || null,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          accuracy: data.accuracy ?? null,
+          heading: data.heading ?? null,
+          speed: data.speed ?? null,
+          updated_at: new Date().toISOString(),
+        }).catch(() => {});
       } catch (err) {
-        console.warn('Supabase passenger location upsert notice:', err);
+        console.warn('Appwrite passenger location notice:', err);
       }
     }
 
@@ -790,26 +740,8 @@ export const motorideApi = {
 
   async getPassengerLiveLocation(
     rideId?: string,
-    passengerId?: string
+    _passengerId?: string
   ): Promise<PassengerLiveLocation | null> {
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        let query = supabase.from('passenger_locations').select('*');
-        if (rideId) {
-          query = query.eq('ride_id', rideId);
-        } else if (passengerId) {
-          query = query.eq('passenger_id', passengerId);
-        }
-        const { data, error } = await query.order('updated_at', { ascending: false }).limit(1).maybeSingle();
-        if (!error && data) {
-          return data as PassengerLiveLocation;
-        }
-      } catch (err) {
-        console.warn('Supabase getPassengerLiveLocation notice:', err);
-      }
-    }
-
     if (rideId) {
       try {
         const res = await fetch(`${API_BASE}/rides/${rideId}/passenger-location`);
@@ -868,10 +800,7 @@ export const motorideApi = {
   },
 
   // Today's Income Calculation Engine
-  // Strictly calculates SUM(fare_amount) for rides where:
-  // captain_id = :captainId AND status = 'completed' (or 'trip_completed')
-  // AND completed_at >= startOfToday AND completed_at < startOfTomorrow
-  // Automatically resets to ₹0 when the calendar day rolls over.
+  // Calculates SUM(fare_amount) for rides where captain_id = :captainId AND status = 'completed' (or 'trip_completed')
   async getCaptainTodayIncome(
     captainId: string,
     timezone: string = 'Asia/Kolkata'
@@ -886,45 +815,8 @@ export const motorideApi = {
 
     let todayIncome = 0;
     let completedCount = 0;
-    let loadedFromDb = false;
 
-    // 1. Query Supabase PostgreSQL rides table if configured
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('rides')
-          .select('id, captain_id, status, final_fare, fare_amount, offered_fare, trip_completed_at, completed_at')
-          .eq('captain_id', captainId)
-          .in('status', ['completed', 'trip_completed']);
-
-        if (!error && Array.isArray(data)) {
-          let sum = 0;
-          let count = 0;
-          data.forEach((r: any) => {
-            const ts = r.completed_at || r.trip_completed_at;
-            if (ts) {
-              const rideDate = new Date(ts);
-              if (!isNaN(rideDate.getTime())) {
-                const rDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(rideDate);
-                if (rDateStr === todayDateStr) {
-                  const fare = Number(r.fare_amount ?? r.final_fare ?? r.offered_fare ?? 0);
-                  sum += fare;
-                  count++;
-                }
-              }
-            }
-          });
-          todayIncome = sum;
-          completedCount = count;
-          loadedFromDb = true;
-        }
-      } catch (err) {
-        console.warn('Supabase today-income query notice:', err);
-      }
-    }
-
-    // 2. Query Server API endpoint /api/captains/:id/today-income
+    // 1. Query Server API endpoint /api/captains/:id/today-income
     try {
       const json = await safeFetchJson<{
         success: boolean;
@@ -934,16 +826,14 @@ export const motorideApi = {
       }>(`${API_BASE}/captains/${captainId}/today-income?tz=${encodeURIComponent(timezone)}`);
 
       if (json && typeof json.today_income === 'number') {
-        if (!loadedFromDb || json.today_income > todayIncome || (todayIncome === 0 && json.today_income > 0)) {
-          todayIncome = json.today_income;
-          completedCount = json.completed_rides_today;
-        }
+        todayIncome = json.today_income;
+        completedCount = json.completed_rides_today;
       }
     } catch {
       // Fallback
     }
 
-    // 3. Check memory/local storage fallback store
+    // 2. Check memory/local storage fallback store
     let localSum = 0;
     let localCount = 0;
     for (const r of localRidesStore.values()) {
@@ -1061,26 +951,7 @@ export const motorideApi = {
         };
       }
     } catch {}
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { data } = await supabase.from('fare_settings').select('*').limit(1).maybeSingle();
-        if (data && data.base_fare) {
-          return {
-            ...DEFAULT_MOTORIDE_FARE_SETTINGS,
-            ...data,
-            ride_charges: {
-              ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
-              ...(data.ride_charges || {}),
-            },
-            courier_charges: {
-              ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
-              ...(data.courier_charges || {}),
-            },
-          };
-        }
-      } catch {}
-    }
+
     const json = await safeFetchJson<{ settings: FareSettings }>(`${API_BASE}/fare-settings`, undefined, {
       settings: DEFAULT_MOTORIDE_FARE_SETTINGS,
     });
@@ -1106,12 +977,7 @@ export const motorideApi = {
       const merged = { ...parsed, ...settings };
       safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(merged));
     } catch {}
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        await supabase.from('fare_settings').upsert([settings]);
-      } catch {}
-    }
+
     const json = await safeFetchJson<{ settings: FareSettings }>(`${API_BASE}/fare-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1208,22 +1074,7 @@ export const motorideApi = {
     const local = localMessagesStore.get(rideId) || [];
     local.forEach((m) => { if (m && m.id) map.set(m.id, m); });
 
-    // 2. Fetch from Supabase if configured
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        const { data, error } = await supabase.from('ride_messages').select('*').eq('ride_id', rideId).order('created_at', { ascending: true });
-        if (!error && data && Array.isArray(data)) {
-          data.forEach((m: any) => {
-            if (m && m.id) map.set(m.id, m);
-          });
-        }
-      } catch (err) {
-        console.warn('Supabase getRideMessages notice:', err);
-      }
-    }
-
-    // 3. Fetch from Backend API
+    // 2. Fetch from Backend API
     const json = await safeFetchJson<{ messages?: any[] }>(`${API_BASE}/rides/${rideId}/messages`, undefined, { messages: [] });
     if (json?.messages && Array.isArray(json.messages)) {
       json.messages.forEach((m: any) => {
@@ -1256,17 +1107,7 @@ export const motorideApi = {
     // 2. Broadcast instantly via Realtime
     realtimeSync.broadcast('RIDE_MESSAGE_RECEIVED', newMsg);
 
-    // 3. Insert into Supabase if configured
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        await supabase.from('ride_messages').insert([newMsg]);
-      } catch (err) {
-        console.warn('Supabase insert message notice:', err);
-      }
-    }
-
-    // 4. Post to Backend API
+    // 3. Post to Backend API
     safeFetchJson<{ message?: any }>(
       `${API_BASE}/rides/${rideId}/messages`,
       {
@@ -1334,22 +1175,6 @@ export const motorideApi = {
         safeStorage.removeItem('motoride_passenger_name');
         safeStorage.removeItem('motoride_passenger_phone');
       } catch {}
-    }
-    const supabase = getSupabase();
-    if (supabase) {
-      try {
-        await Promise.allSettled([
-          supabase.from('rides').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('chat_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('captains').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('passengers').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('vehicles').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('wallets').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-          supabase.from('profiles').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-        ]);
-      } catch (e) {
-        console.warn('Supabase database purge notice:', e);
-      }
     }
     const json = await safeFetchJson<{ success: boolean; message: string }>(`${API_BASE}/admin/purge-all`, {
       method: 'POST',
