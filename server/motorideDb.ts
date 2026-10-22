@@ -41,6 +41,59 @@ export function broadcastEvent(event: string, payload: any) {
 // 1. Initial Fare Settings & Separate Ride/Courier Configurations
 const DATA_DIR = path.join(process.cwd(), 'data');
 const FARE_FILE = path.join(DATA_DIR, 'fare_settings.json');
+const ACCOUNTS_FILE = path.join(DATA_DIR, 'motoride_accounts.json');
+
+export let registeredAccounts: any[] = [];
+
+export function loadAccountsFromDisk() {
+  try {
+    if (fs.existsSync(ACCOUNTS_FILE)) {
+      const raw = fs.readFileSync(ACCOUNTS_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) {
+        registeredAccounts = data;
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load accounts from disk:', err);
+  }
+}
+loadAccountsFromDisk();
+
+export function saveAccountsToDisk() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(registeredAccounts, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to save accounts to disk:', err);
+  }
+}
+
+export function saveOrUpdateAccount(account: any): any {
+  if (!account || !account.email) return null;
+  const cleanEmail = String(account.email).toLowerCase().trim();
+  const idx = registeredAccounts.findIndex((a) => a.email && String(a.email).toLowerCase().trim() === cleanEmail);
+  const updated = {
+    ...account,
+    email: cleanEmail,
+    updated_at: new Date().toISOString(),
+  };
+  if (idx >= 0) {
+    registeredAccounts[idx] = { ...registeredAccounts[idx], ...updated };
+  } else {
+    registeredAccounts.push(updated);
+  }
+  saveAccountsToDisk();
+  return updated;
+}
+
+export function findAccountByEmail(email: string): any | null {
+  if (!email) return null;
+  const cleanEmail = String(email).toLowerCase().trim();
+  return registeredAccounts.find((a) => a.email && String(a.email).toLowerCase().trim() === cleanEmail) || null;
+}
 
 export const defaultRideCharges: RideChargeSettings = {
   base_fare: 25.0,
