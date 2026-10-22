@@ -216,7 +216,7 @@ export const CaptainProfileDrawer: React.FC<CaptainProfileDrawerProps> = ({
 
     try {
       // 1. Compress image to clean, lightweight 400x400 data URL for instant rendering & local storage
-      const compressedDataUrl = await compressImageToDataUrl(file, 400, 400, 0.88);
+      const compressedDataUrl = await compressImageToDataUrl(file, 400, 0.88);
       if (!compressedDataUrl) {
         alert('Failed to process uploaded image.');
         return;
@@ -237,8 +237,8 @@ export const CaptainProfileDrawer: React.FC<CaptainProfileDrawerProps> = ({
         onUpdateCaptain({ avatar_url: compressedDataUrl });
       }
 
-      // 2. Background upload to Supabase 'motoride-media' bucket
-      uploadMediaToSupabase(file, file.name, 'avatars').then((uploadedUrl) => {
+      // 2. Background upload to Appwrite 'route_media' bucket
+      uploadMediaToSupabase(file, 'avatars').then((uploadedUrl) => {
         if (uploadedUrl) {
           setAvatarUrl(uploadedUrl);
           safeStorage.setItem('motoride_captain_avatar', uploadedUrl);

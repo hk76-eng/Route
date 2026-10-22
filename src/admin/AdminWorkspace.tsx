@@ -711,7 +711,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   };
 
   const filteredRides = rides.filter((r) => {
-    if (isDemoRide(r)) return false;
+    if (isDemoRide(r.id)) return false;
     if (rideFilter !== 'all' && r.status !== rideFilter) return false;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -725,7 +725,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   });
 
   const filteredCaptains = captains.filter((cpt) => {
-    if (isDemoAccount(cpt)) return false;
+    if (isDemoAccount(cpt.email || cpt.id)) return false;
     if (captainFilter === 'online' && !cpt.is_online) return false;
     if (captainFilter === 'approved' && !cpt.is_approved) return false;
     if (captainFilter === 'suspended' && cpt.is_approved) return false;
@@ -745,7 +745,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   });
 
   const filteredPassengers = passengers.filter((p) => {
-    if (isDemoAccount(p)) return false;
+    if (isDemoAccount(p.email || p.id)) return false;
     if (passengerSearch) {
       const q = passengerSearch.toLowerCase();
       return (
@@ -2237,7 +2237,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const url = await uploadMediaToAppwrite(file, file.name, 'general');
+                      const url = await uploadMediaToAppwrite(file, 'general');
                       if (url) {
                         setTestUploadUrl(url);
                         showToast(`Uploaded ${file.name} to '${MOTORIDE_MEDIA_BUCKET}' Appwrite storage!`);
