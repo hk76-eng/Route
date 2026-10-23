@@ -118,6 +118,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   const [offerCountdownSeconds, setOfferCountdownSeconds] = useState<number>(25);
   const currentOfferIdRef = useRef<string | null>(null);
   const prevOffersCountRef = useRef<number>(0);
+  const cancelledRideIdsRef = useRef<Set<string>>(new Set());
 
   // Filter out any offers the passenger has passed/declined or that expired
   const activeOffers = (activeRide?.offers || []).filter((o) => !declinedOfferIds.has(o.id));
@@ -593,10 +594,12 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
     // Listen to real-time events
     const unsubUpdate = realtimeSync.on('RIDE_UPDATED', (ride: MotorideRide) => {
-      if (ride.passenger_id === currentPassengerId) {
+      const isMyRide = ride.passenger_id === currentPassengerId || (activeRide && ride.id === activeRide.id);
+      if (isMyRide) {
         if (ride.status.includes('cancelled')) {
+          cancelledRideIdsRef.current.add(ride.id);
           setActiveRide(null);
-        } else {
+        } else if (!cancelledRideIdsRef.current.has(ride.id)) {
           setActiveRide((prev) => {
             if (!prev || prev.id !== ride.id) return ride;
             return {
@@ -614,11 +617,22 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       }
     });
 
+    const unsubCancelled = realtimeSync.on('RIDE_CANCELLED', (payload: any) => {
+      const cancelledId = payload?.ride_id || payload?.ride?.id;
+      if (cancelledId) {
+        cancelledRideIdsRef.current.add(cancelledId);
+        setActiveRide((prev) => (prev?.id === cancelledId ? null : prev));
+        loadRideHistory();
+      }
+    });
+
     const unsubAccepted = realtimeSync.on('RIDE_ACCEPTED', (ride: MotorideRide) => {
-      if (ride.passenger_id === currentPassengerId) {
+      const isMyRide = ride.passenger_id === currentPassengerId || (activeRide && ride.id === activeRide.id);
+      if (isMyRide) {
         if (ride.status.includes('cancelled')) {
+          cancelledRideIdsRef.current.add(ride.id);
           setActiveRide(null);
-        } else {
+        } else if (!cancelledRideIdsRef.current.has(ride.id)) {
           setActiveRide((prev) => {
             if (!prev || prev.id !== ride.id) return ride;
             return {
@@ -675,12 +689,21 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     });
 
     const unsubOffer = realtimeSync.on('RIDE_OFFER_RECEIVED', (payload: { ride: MotorideRide }) => {
-      if (payload.ride.passenger_id === currentPassengerId) {
+      const isMyRide = payload?.ride?.passenger_id === currentPassengerId || (activeRide && payload?.ride?.id === activeRide.id);
+      if (isMyRide && payload?.ride) {
         if (payload.ride.status.includes('cancelled')) {
+          cancelledRideIdsRef.current.add(payload.ride.id);
           setActiveRide(null);
-        } else {
+        } else if (!cancelledRideIdsRef.current.has(payload.ride.id)) {
           setActiveRide(payload.ride);
         }
+      }
+    });
+
+    // Cross-device sync responder: when Captain mounts and requests active rides, answer immediately
+    const unsubReqSync = realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
+      if (activeRide && (activeRide.status === 'requested' || activeRide.status === 'captain_offered')) {
+        realtimeSync.sendActiveRidesSync([activeRide]);
       }
     });
 
@@ -700,14 +723,16 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
     return () => {
       unsubUpdate();
+      unsubCancelled();
       unsubAccepted();
       unsubLocation();
       unsubOffer();
+      unsubReqSync();
       clearInterval(pollTimer);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [currentPassengerId]);
+  }, [currentPassengerId, activeRide?.id]);
 
   // Animated Captain Progression for Active Ride on Passenger Map:
   // When 'captain_accepted': smoothly animate captain arriving to Pickup Location A
@@ -897,11 +922,12 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       const rides = await motorideApi.getRides({ passenger_id: currentPassengerId });
       const active = rides.find(
         (r) =>
-          r.status === 'requested' ||
-          r.status === 'captain_offered' ||
-          r.status === 'captain_accepted' ||
-          r.status === 'captain_arrived' ||
-          r.status === 'trip_started'
+          !cancelledRideIdsRef.current.has(r.id) &&
+          (r.status === 'requested' ||
+            r.status === 'captain_offered' ||
+            r.status === 'captain_accepted' ||
+            r.status === 'captain_arrived' ||
+            r.status === 'trip_started')
       );
       if (active) {
         setActiveRide((prev) => {
@@ -962,6 +988,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
         comment: rideComment.trim() || undefined,
         notes: rideComment.trim() || undefined,
       });
+      cancelledRideIdsRef.current.delete(newRide.id);
       setActiveRide(newRide);
       loadRideHistory();
 
@@ -1123,10 +1150,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   // Cancel Current Ride (Optimistic state update without blocking modals for iframe sandbox)
   const handleCancelRide = async () => {
     if (!activeRide || isCancelling) return;
-    setIsCancelling(true);
     const rideIdToCancel = activeRide.id;
+    cancelledRideIdsRef.current.add(rideIdToCancel);
+    setActiveRide(null);
+    setIsCancelling(true);
     try {
-      setActiveRide(null);
       await motorideApi.updateRideStatus(rideIdToCancel, 'cancelled_by_passenger', {
         cancellation_reason: 'Passenger cancelled the request',
       });

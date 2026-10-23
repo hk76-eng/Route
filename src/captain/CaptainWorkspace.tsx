@@ -442,13 +442,25 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
     // Listen to real-time events
     const unsubRideCreated = realtimeSync.on('RIDE_CREATED', (newRide: MotorideRide) => {
-      if (!newRide || !newRide.id || newRide.id.includes('demo') || newRide.passenger_id === 'usr_demo_100') {
-        return;
-      }
-      setAvailableRides((prev) => {
-        if (prev.some((r) => r.id === newRide.id)) return prev;
-        return [newRide, ...prev.filter((r) => !r.id.includes('demo') && r.passenger_id !== 'usr_demo_100')];
+      if (!newRide || !newRide.id) return;
+      // Clear ride ID from decline set so newly created ride always rings for captain
+      setDeclinedRideIds((prev) => {
+        if (prev.has(newRide.id)) {
+          const next = new Set(prev);
+          next.delete(newRide.id);
+          return next;
+        }
+        return prev;
       });
+      setAvailableRides((prev) => {
+        if (prev.some((r) => r.id === newRide.id)) {
+          return prev.map((r) => (r.id === newRide.id ? newRide : r));
+        }
+        return [newRide, ...prev];
+      });
+      setDispatchIndex(0);
+      setCountdownSeconds(25);
+      playIncomingCallTune();
       // Vibrate mobile device when new ride arrives
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         try {
@@ -458,6 +470,8 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     });
 
     const unsubRideUpdated = realtimeSync.on('RIDE_UPDATED', (updatedRide: MotorideRide) => {
+      if (!updatedRide || !updatedRide.id) return;
+
       if (updatedRide.captain_id === captainId) {
         if (updatedRide.status === 'trip_completed' || updatedRide.status === 'completed' || updatedRide.status.includes('cancelled')) {
           setActiveRide(null);
@@ -473,7 +487,52 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         }
         return prev.map((r) => (r.id === updatedRide.id ? updatedRide : r));
       });
+
+      if (updatedRide.status.includes('cancelled')) {
+        setDeclinedRideIds((prev) => {
+          const next = new Set(prev);
+          next.delete(updatedRide.id);
+          return next;
+        });
+        setInspectedRide((prev) => (prev?.id === updatedRide.id ? null : prev));
+      }
     });
+
+    const unsubRideCancelled = realtimeSync.on('RIDE_CANCELLED', (payload: any) => {
+      const cancelledId = payload?.ride_id || payload?.ride?.id;
+      if (cancelledId) {
+        setAvailableRides((prev) => prev.filter((r) => r.id !== cancelledId));
+        setDeclinedRideIds((prev) => {
+          const next = new Set(prev);
+          next.delete(cancelledId);
+          return next;
+        });
+        setInspectedRide((prev) => (prev?.id === cancelledId ? null : prev));
+        setActiveRide((prev) => (prev?.id === cancelledId ? null : prev));
+      }
+    });
+
+    const unsubActiveSync = realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
+      if (!Array.isArray(rides)) return;
+      const valid = rides.filter(
+        (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
+      );
+      if (valid.length > 0) {
+        setAvailableRides((prev) => {
+          const map = new Map<string, MotorideRide>();
+          valid.forEach((r) => map.set(r.id, r));
+          prev.forEach((r) => {
+            if (!map.has(r.id)) map.set(r.id, r);
+          });
+          return Array.from(map.values()).filter(
+            (r) => r.status === 'requested' || r.status === 'captain_offered'
+          );
+        });
+      }
+    });
+
+    // Request active rides sync over MQTT from any other connected devices
+    realtimeSync.requestSync();
 
     // Real-time synchronization when rides are completed and earnings update
     const unsubEarningsUpdated = realtimeSync.on('EARNINGS_UPDATED', () => {
@@ -511,6 +570,8 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     return () => {
       unsubRideCreated();
       unsubRideUpdated();
+      unsubRideCancelled();
+      unsubActiveSync();
       unsubEarningsUpdated();
       clearInterval(rolloverInterval);
       clearInterval(pollInterval);
@@ -518,12 +579,6 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       document.removeEventListener('visibilitychange', handleVisibility);
     };
   }, [captainId, activeRide?.id]);
-
-  useEffect(() => {
-    if (inspectedRide && (inspectedRide.id.includes('demo') || inspectedRide.passenger_id === 'usr_demo_100')) {
-      setInspectedRide(null);
-    }
-  }, [inspectedRide]);
 
   // Auto-sync Leaflet Map route (Locations A & B) with the single dispatched Uber ride request
   useEffect(() => {
@@ -735,7 +790,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       const list = await motorideApi.getRides({ active_for_captain: true });
       if (Array.isArray(list)) {
         const realRides = list.filter(
-          (r) => r && r.id && !r.id.includes('demo') && r.passenger_id !== 'usr_demo_100'
+          (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
         );
         setAvailableRides(realRides);
       } else {

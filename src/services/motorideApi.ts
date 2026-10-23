@@ -44,7 +44,7 @@ async function safeAppwriteCreateDocument(
   if (!databases || !isAppwriteConfigured()) return false;
 
   let currentData = sanitizeForAppwrite(data);
-  const maxRetries = 10;
+  const maxRetries = 3;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -58,7 +58,9 @@ async function safeAppwriteCreateDocument(
       return true;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || '';
-      console.warn(`Appwrite createDocument attempt ${attempt + 1} for ${collectionId} notice:`, msg);
+      if (msg.includes('database_not_found') || err?.code === 404) {
+        return false;
+      }
 
       const match = msg.match(/Unknown attribute:\s*"([^"]+)"/) || msg.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
       if (match && match[1] && currentData[match[1]] !== undefined) {
@@ -71,6 +73,9 @@ async function safeAppwriteCreateDocument(
         return true;
       } catch (err2: any) {
         const msg2 = err2?.message || err2?.toString() || '';
+        if (msg2.includes('database_not_found') || err2?.code === 404) {
+          return false;
+        }
         const match2 = msg2.match(/Unknown attribute:\s*"([^"]+)"/) || msg2.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
         if (match2 && match2[1] && currentData[match2[1]] !== undefined) {
           delete currentData[match2[1]];
@@ -102,7 +107,7 @@ async function safeAppwriteUpdateDocument(
   if (!databases || !isAppwriteConfigured()) return false;
 
   let currentData = sanitizeForAppwrite(data);
-  const maxRetries = 10;
+  const maxRetries = 3;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -110,7 +115,9 @@ async function safeAppwriteUpdateDocument(
       return true;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || '';
-      console.warn(`Appwrite updateDocument attempt ${attempt + 1} for ${collectionId} notice:`, msg);
+      if (msg.includes('database_not_found') || err?.code === 404) {
+        return false;
+      }
 
       const match = msg.match(/Unknown attribute:\s*"([^"]+)"/) || msg.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
       if (match && match[1] && currentData[match[1]] !== undefined) {
@@ -134,7 +141,7 @@ try {
     const parsed = JSON.parse(saved);
     if (Array.isArray(parsed)) {
       parsed.forEach((r: MotorideRide) => {
-        if (r && r.id && !r.id.includes('demo') && r.passenger_id !== 'usr_demo_100') {
+        if (r && r.id) {
           localRidesStore.set(r.id, r);
         }
       });
@@ -331,9 +338,22 @@ export const motorideApi = {
               } as MotorideRide;
 
               const existing = localRidesStore.get(rideId) || map.get(rideId) || ({} as MotorideRide);
+              
+              // Prevent stale doc from reverting local cancellation or completion
+              let effectiveStatus = rideFromDoc.status;
+              if (
+                existing.status &&
+                (existing.status.includes('cancelled') || existing.status === 'trip_completed' || existing.status === 'completed')
+              ) {
+                if (rideFromDoc.status === 'requested' || rideFromDoc.status === 'captain_offered') {
+                  effectiveStatus = existing.status;
+                }
+              }
+
               const merged: MotorideRide = {
                 ...existing,
                 ...rideFromDoc,
+                status: effectiveStatus,
                 offers: rideFromDoc.offers && rideFromDoc.offers.length > 0 ? rideFromDoc.offers : (existing.offers || []),
                 captain_name: rideFromDoc.captain_name || existing.captain_name,
                 captain_phone: rideFromDoc.captain_phone || existing.captain_phone,
@@ -359,9 +379,7 @@ export const motorideApi = {
       result = result.filter(
         (r) =>
           r &&
-          (r.status === 'requested' || r.status === 'captain_offered') &&
-          !r.id?.includes('demo') &&
-          r.passenger_id !== 'usr_demo_100'
+          (r.status === 'requested' || r.status === 'captain_offered')
       );
     } else {
       if (params?.status && params.status !== 'all') {
@@ -436,8 +454,8 @@ export const motorideApi = {
     // 2. Broadcast immediately over Realtime (Appwrite / SSE / BroadcastChannel)
     realtimeSync.broadcast('RIDE_CREATED', payload);
 
-    // 3. Post to Appwrite database if configured
-    await safeAppwriteCreateDocument('rides', payload.id, payload);
+    // 3. Post to Appwrite database in background if configured
+    safeAppwriteCreateDocument('rides', payload.id, payload).catch(() => {});
 
     // 4. Also post to backend if running
     safeFetchJson<{ ride?: MotorideRide }>(
@@ -654,6 +672,9 @@ export const motorideApi = {
 
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
     realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: updatedRide, status });
+    if (status.includes('cancelled')) {
+      realtimeSync.broadcast('RIDE_CANCELLED', { ride_id: rideId, ride: updatedRide });
+    }
     if (status === 'trip_completed' || status === 'completed' || status.includes('cancelled')) {
       realtimeSync.broadcast('EARNINGS_UPDATED', { captain_id: updatedRide.captain_id, ride: updatedRide });
     }

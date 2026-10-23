@@ -1,7 +1,12 @@
 import { getAppwriteRealtime, isAppwriteConfigured, appwriteDatabaseId } from '../lib/appwrite';
 import { MotorideRide } from '../types/motoride';
+import mqtt, { MqttClient } from 'mqtt';
 
 type EventCallback = (payload: any) => void;
+
+const MQTT_TOPIC_EVENTS = 'motoride/v2/events';
+const MQTT_TOPIC_LOCATION = 'motoride/v2/location';
+const MQTT_TOPIC_SYNC = 'motoride/v2/sync';
 
 class RealtimeSyncManager {
   private listeners: Map<string, Set<EventCallback>> = new Map();
@@ -10,21 +15,26 @@ class RealtimeSyncManager {
   private reconnectTimeout: any = null;
   private appwriteRealtime: any = null;
   private appwriteSubscribers: (() => void)[] = [];
+  private mqttClient: MqttClient | null = null;
+  private clientId: string = 'cli_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now();
 
   constructor() {
     this.init();
   }
 
   private init() {
-    // 1. Initialize Appwrite Realtime if configured
+    // 1. Initialize Universal Cross-Device MQTT WebSocket Relay
+    this.setupMqtt();
+
+    // 2. Initialize Appwrite Realtime if configured
     if (isAppwriteConfigured()) {
       this.setupAppwriteRealtime();
     }
 
-    // 2. Initialize Shared Backend SSE stream if available
+    // 3. Initialize Shared Backend SSE stream if available
     this.connectSSE();
 
-    // 3. Initialize Local BroadcastChannel for instant same-browser multi-tab synchronization
+    // 4. Initialize Local BroadcastChannel for instant same-browser multi-tab synchronization
     if (typeof window !== 'undefined' && window.BroadcastChannel) {
       try {
         const localChannel = new BroadcastChannel('motoride-local-realtime');
@@ -43,6 +53,9 @@ class RealtimeSyncManager {
     if (typeof window !== 'undefined') {
       const handleWake = () => {
         if (document.visibilityState === 'visible' || navigator.onLine) {
+          if (!this.mqttClient || !this.mqttClient.connected) {
+            this.setupMqtt();
+          }
           if (!this.isConnected || !this.sseSource || this.sseSource.readyState === EventSource.CLOSED) {
             this.connectSSE();
           }
@@ -56,12 +69,69 @@ class RealtimeSyncManager {
     }
   }
 
+  private setupMqtt() {
+    if (typeof window === 'undefined') return;
+
+    if (this.mqttClient && this.mqttClient.connected) {
+      return;
+    }
+
+    try {
+      const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+      const client = mqtt.connect(brokerUrl, {
+        clientId: this.clientId,
+        clean: true,
+        connectTimeout: 7000,
+        reconnectPeriod: 3000,
+        keepalive: 30,
+      });
+
+      client.on('connect', () => {
+        this.isConnected = true;
+        this.emit('CONNECTION_STATUS', { connected: true, type: 'mqtt_relay' }, false);
+
+        // Subscribe to global ride events, location updates, and sync queries
+        client.subscribe([MQTT_TOPIC_EVENTS, MQTT_TOPIC_LOCATION, MQTT_TOPIC_SYNC], (err) => {
+          if (!err) {
+            // Request currently active rides across all devices
+            this.requestSync();
+          }
+        });
+      });
+
+      client.on('message', (_topic: string, messageBuffer: any) => {
+        try {
+          const raw = messageBuffer.toString();
+          const parsed = JSON.parse(raw);
+          if (!parsed || parsed.senderId === this.clientId) {
+            return; // Ignore own published messages
+          }
+
+          const { event, payload } = parsed;
+          if (event) {
+            // Emit directly to internal listeners without re-broadcasting over MQTT
+            this.emit(event, payload, false);
+          }
+        } catch (e) {
+          console.warn('MQTT message parse notice:', e);
+        }
+      });
+
+      client.on('error', (err) => {
+        console.warn('MQTT connection notice:', err?.message || err);
+      });
+
+      this.mqttClient = client;
+    } catch (err) {
+      console.warn('MQTT initialization notice:', err);
+    }
+  }
+
   private setupAppwriteRealtime() {
     const rt = getAppwriteRealtime();
     if (!rt || !isAppwriteConfigured()) return;
 
     try {
-      // Clear previous subscriptions
       this.appwriteSubscribers.forEach((unsub) => {
         try { unsub(); } catch {}
       });
@@ -125,7 +195,7 @@ class RealtimeSyncManager {
       }
 
       this.isConnected = true;
-      this.emit('CONNECTION_STATUS', { connected: true, type: 'appwrite_realtime' });
+      this.emit('CONNECTION_STATUS', { connected: true, type: 'appwrite_realtime' }, false);
     } catch (err) {
       console.warn('Appwrite Realtime setup warning:', err);
     }
@@ -143,28 +213,24 @@ class RealtimeSyncManager {
 
       this.sseSource.onopen = () => {
         this.isConnected = true;
-        this.emit('CONNECTION_STATUS', { connected: true, type: 'sse' });
+        this.emit('CONNECTION_STATUS', { connected: true, type: 'sse' }, false);
       };
 
       this.sseSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.event && data.event !== 'PING') {
-            this.emit(data.event, data.payload);
+            this.emit(data.event, data.payload, false);
           }
         } catch {}
       };
 
       this.sseSource.onerror = () => {
-        if (!isAppwriteConfigured()) {
-          this.isConnected = false;
-          this.emit('CONNECTION_STATUS', { connected: false, type: 'sse' });
-        }
         this.sseSource?.close();
         clearTimeout(this.reconnectTimeout);
         this.reconnectTimeout = setTimeout(() => {
           this.connectSSE();
-        }, 8000);
+        }, 10000);
       };
     } catch (err) {
       console.warn('SSE connection attempt error:', err);
@@ -204,16 +270,70 @@ class RealtimeSyncManager {
   }
 
   public broadcast(event: string, data: any) {
-    this.emit(event, data);
+    // 1. Emit locally to all local subscribers and tabs
+    this.emit(event, data, true);
+
+    // 2. Publish globally over MQTT WebSocket for cross-device instant sync
+    if (this.mqttClient && this.mqttClient.connected) {
+      try {
+        let topic = MQTT_TOPIC_EVENTS;
+        if (event === 'CAPTAIN_LOCATION_UPDATED' || event === 'PASSENGER_LOCATION_UPDATED') {
+          topic = MQTT_TOPIC_LOCATION;
+        } else if (event === 'REQUEST_ACTIVE_RIDES' || event === 'ACTIVE_RIDES_SYNC') {
+          topic = MQTT_TOPIC_SYNC;
+        }
+
+        const msg = JSON.stringify({
+          event,
+          payload: data,
+          senderId: this.clientId,
+          timestamp: Date.now(),
+        });
+
+        this.mqttClient.publish(topic, msg, { qos: 1 });
+      } catch (err) {
+        console.warn('MQTT publish error:', err);
+      }
+    }
   }
 
-  public requestSync() {}
+  public requestSync() {
+    if (this.mqttClient && this.mqttClient.connected) {
+      try {
+        this.mqttClient.publish(
+          MQTT_TOPIC_SYNC,
+          JSON.stringify({
+            event: 'REQUEST_SYNC_RECEIVED',
+            senderId: this.clientId,
+            timestamp: Date.now(),
+          }),
+          { qos: 1 }
+        );
+      } catch {}
+    }
+  }
 
-  public sendActiveRidesSync(_rides: MotorideRide[]) {}
+  public sendActiveRidesSync(rides: MotorideRide[]) {
+    if (this.mqttClient && this.mqttClient.connected && Array.isArray(rides) && rides.length > 0) {
+      try {
+        this.mqttClient.publish(
+          MQTT_TOPIC_SYNC,
+          JSON.stringify({
+            event: 'ACTIVE_RIDES_SYNC_RECEIVED',
+            payload: rides,
+            senderId: this.clientId,
+            timestamp: Date.now(),
+          }),
+          { qos: 1 }
+        );
+      } catch {}
+    }
+  }
 
   public getStatus() {
     return {
       isConnected: this.isConnected,
+      isMqttConnected: Boolean(this.mqttClient?.connected),
       isAppwriteActive: isAppwriteConfigured(),
     };
   }
