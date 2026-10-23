@@ -339,15 +339,24 @@ export const motorideApi = {
 
               const existing = localRidesStore.get(rideId) || map.get(rideId) || ({} as MotorideRide);
               
-              // Prevent stale doc from reverting local cancellation or completion
+              const STATUS_PROGRESSION: Record<string, number> = {
+                requested: 1,
+                captain_offered: 2,
+                captain_accepted: 3,
+                captain_arrived: 4,
+                trip_started: 5,
+                trip_completed: 6,
+                completed: 6,
+                cancelled_by_passenger: 7,
+                cancelled_by_captain: 7,
+              };
+
+              // Prevent stale doc from reverting forward status transitions (e.g. captain_arrived reverting to captain_accepted)
               let effectiveStatus = rideFromDoc.status;
-              if (
-                existing.status &&
-                (existing.status.includes('cancelled') || existing.status === 'trip_completed' || existing.status === 'completed')
-              ) {
-                if (rideFromDoc.status === 'requested' || rideFromDoc.status === 'captain_offered') {
-                  effectiveStatus = existing.status;
-                }
+              const existingRank = (STATUS_PROGRESSION as any)[existing.status] || 0;
+              const docRank = (STATUS_PROGRESSION as any)[rideFromDoc.status] || 0;
+              if (existingRank > docRank) {
+                effectiveStatus = existing.status;
               }
 
               const merged: MotorideRide = {
@@ -639,10 +648,11 @@ export const motorideApi = {
   async updateRideStatus(
     rideId: string,
     status: MotorideRideStatus,
-    extra?: {
+    extra?: Partial<MotorideRide> & {
       cancellation_reason?: string;
       final_distance_km?: number;
       final_fare?: number;
+      [key: string]: any;
     }
   ): Promise<MotorideRide> {
     const existing = localRidesStore.get(rideId) || ({ id: rideId } as MotorideRide);
@@ -672,6 +682,9 @@ export const motorideApi = {
 
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
     realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: updatedRide, status });
+    if (status === 'captain_arrived') {
+      realtimeSync.broadcast('CAPTAIN_ARRIVED', { ride_id: rideId, ride: updatedRide, status: 'captain_arrived' });
+    }
     if (status.includes('cancelled')) {
       realtimeSync.broadcast('RIDE_CANCELLED', { ride_id: rideId, ride: updatedRide });
     }

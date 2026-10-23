@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   MotorideRide,
+  MotorideRideStatus,
   RideOffer,
   RideTypeCode,
   FareSettings,
@@ -119,6 +120,49 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   const currentOfferIdRef = useRef<string | null>(null);
   const prevOffersCountRef = useRef<number>(0);
   const cancelledRideIdsRef = useRef<Set<string>>(new Set());
+  const activeRideRef = useRef<MotorideRide | null>(null);
+  const prevStatusRef = useRef<string | undefined>(undefined);
+
+  // Keep activeRideRef continuously synchronized with current activeRide state
+  useEffect(() => {
+    activeRideRef.current = activeRide;
+  }, [activeRide]);
+
+  // Audio chime and vibration alert when Captain arrives at pickup location
+  const playArrivalTune = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      if (ctx.state === 'suspended') ctx.resume();
+      const notes = [659.25, 783.99, 1046.50, 1318.51]; // E5, G5, C6, E6 arrival chime
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+        gain.gain.setValueAtTime(0, ctx.currentTime + idx * 0.12);
+        gain.gain.linearRampToValueAtTime(0.22, ctx.currentTime + idx * 0.12 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.12);
+        osc.stop(ctx.currentTime + idx * 0.12 + 0.45);
+      });
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (activeRide?.status === 'captain_arrived' && prevStatusRef.current !== 'captain_arrived') {
+      playArrivalTune();
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([200, 100, 200]);
+        } catch {}
+      }
+    }
+    prevStatusRef.current = activeRide?.status;
+  }, [activeRide?.status]);
 
   // Filter out any offers the passenger has passed/declined or that expired
   const activeOffers = (activeRide?.offers || []).filter((o) => !declinedOfferIds.has(o.id));
@@ -592,28 +636,78 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     loadActiveRide();
     loadRideHistory();
 
+    // Unified handler for incoming ride updates across all real-time events
+    const handleIncomingRideUpdate = (ride: MotorideRide, explicitStatus?: string) => {
+      if (!ride || !ride.id) return;
+      const currentActive = activeRideRef.current;
+      const currentActiveId = currentActive?.id;
+      const effectivePassengerId = currentPassengerId || authUser?.id || '';
+
+      const isMyRide =
+        Boolean(currentActiveId && ride.id === currentActiveId) ||
+        Boolean(ride.passenger_id && effectivePassengerId && ride.passenger_id === effectivePassengerId) ||
+        Boolean(currentActive && currentActive.ride_code && currentActive.ride_code === ride.ride_code);
+
+      if (!isMyRide) return;
+
+      const targetStatus = explicitStatus || ride.status;
+
+      if (targetStatus && targetStatus.includes('cancelled')) {
+        cancelledRideIdsRef.current.add(ride.id);
+        setActiveRide(null);
+      } else if (!cancelledRideIdsRef.current.has(ride.id)) {
+        setActiveRide((prev) => {
+          const base = prev || currentActive || ride;
+          const merged: MotorideRide = {
+            ...base,
+            ...ride,
+            status: (targetStatus || ride.status || base.status) as MotorideRideStatus,
+            captain_name: ride.captain_name || base.captain_name,
+            captain_phone: ride.captain_phone || base.captain_phone,
+            vehicle_model: ride.vehicle_model || base.vehicle_model,
+            plate_number: ride.plate_number || base.plate_number,
+            captain_avatar: (ride as any).captain_avatar || (ride as any).avatar_url || (base as any).captain_avatar || (base as any).avatar_url,
+            captain_current_lat: ride.captain_current_lat ?? base.captain_current_lat,
+            captain_current_lng: ride.captain_current_lng ?? base.captain_current_lng,
+            captain_heading: ride.captain_heading ?? base.captain_heading,
+          };
+          return merged;
+        });
+
+        if (targetStatus === 'captain_arrived') {
+          const pLat = ride.pickup_lat || currentActive?.pickup_lat || pickup.lat;
+          const pLng = ride.pickup_lng || currentActive?.pickup_lng || pickup.lng;
+          if (pLat && pLng) {
+            setAnimatedCaptainPos({
+              lat: pLat,
+              lng: pLng,
+              heading: 45,
+            });
+          }
+        }
+      }
+      loadRideHistory();
+    };
+
     // Listen to real-time events
     const unsubUpdate = realtimeSync.on('RIDE_UPDATED', (ride: MotorideRide) => {
-      const isMyRide = ride.passenger_id === currentPassengerId || (activeRide && ride.id === activeRide.id);
-      if (isMyRide) {
-        if (ride.status.includes('cancelled')) {
-          cancelledRideIdsRef.current.add(ride.id);
-          setActiveRide(null);
-        } else if (!cancelledRideIdsRef.current.has(ride.id)) {
-          setActiveRide((prev) => {
-            if (!prev || prev.id !== ride.id) return ride;
-            return {
-              ...prev,
-              ...ride,
-              captain_name: ride.captain_name || prev.captain_name,
-              captain_phone: ride.captain_phone || prev.captain_phone,
-              vehicle_model: ride.vehicle_model || prev.vehicle_model,
-              plate_number: ride.plate_number || prev.plate_number,
-              captain_avatar: (ride as any).captain_avatar || (ride as any).avatar_url || (prev as any).captain_avatar || (prev as any).avatar_url,
-            };
-          });
+      handleIncomingRideUpdate(ride);
+    });
+
+    const unsubStatusChanged = realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
+      if (payload?.ride) {
+        handleIncomingRideUpdate(payload.ride, payload.status);
+      }
+    });
+
+    const unsubCaptainArrived = realtimeSync.on('CAPTAIN_ARRIVED', (payload: any) => {
+      if (payload?.ride) {
+        handleIncomingRideUpdate(payload.ride, 'captain_arrived');
+      } else if (payload?.ride_id) {
+        const currentActive = activeRideRef.current;
+        if (currentActive && currentActive.id === payload.ride_id) {
+          setActiveRide((prev) => (prev ? { ...prev, status: 'captain_arrived' } : null));
         }
-        loadRideHistory();
       }
     });
 
@@ -627,26 +721,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     });
 
     const unsubAccepted = realtimeSync.on('RIDE_ACCEPTED', (ride: MotorideRide) => {
-      const isMyRide = ride.passenger_id === currentPassengerId || (activeRide && ride.id === activeRide.id);
-      if (isMyRide) {
-        if (ride.status.includes('cancelled')) {
-          cancelledRideIdsRef.current.add(ride.id);
-          setActiveRide(null);
-        } else if (!cancelledRideIdsRef.current.has(ride.id)) {
-          setActiveRide((prev) => {
-            if (!prev || prev.id !== ride.id) return ride;
-            return {
-              ...prev,
-              ...ride,
-              captain_name: ride.captain_name || prev.captain_name,
-              captain_phone: ride.captain_phone || prev.captain_phone,
-              vehicle_model: ride.vehicle_model || prev.vehicle_model,
-              plate_number: ride.plate_number || prev.plate_number,
-              captain_avatar: (ride as any).captain_avatar || (ride as any).avatar_url || (prev as any).captain_avatar || (prev as any).avatar_url,
-            };
-          });
-        }
-      }
+      handleIncomingRideUpdate(ride, 'captain_accepted');
     });
 
     const unsubLocation = realtimeSync.on('CAPTAIN_LOCATION_UPDATED', (payload) => {
@@ -702,8 +777,9 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
     // Cross-device sync responder: when Captain mounts and requests active rides, answer immediately
     const unsubReqSync = realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
-      if (activeRide && (activeRide.status === 'requested' || activeRide.status === 'captain_offered')) {
-        realtimeSync.sendActiveRidesSync([activeRide]);
+      const current = activeRideRef.current || activeRide;
+      if (current && (current.status === 'requested' || current.status === 'captain_offered' || current.status === 'captain_accepted' || current.status === 'captain_arrived')) {
+        realtimeSync.sendActiveRidesSync([current]);
       }
     });
 
@@ -723,6 +799,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
     return () => {
       unsubUpdate();
+      unsubStatusChanged();
+      unsubCaptainArrived();
       unsubCancelled();
       unsubAccepted();
       unsubLocation();
@@ -919,7 +997,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
   const loadActiveRide = async () => {
     try {
-      const rides = await motorideApi.getRides({ passenger_id: currentPassengerId });
+      const effectivePassengerId = currentPassengerId || authUser?.id || '';
+      const rides = await motorideApi.getRides(effectivePassengerId ? { passenger_id: effectivePassengerId } : undefined);
       const active = rides.find(
         (r) =>
           !cancelledRideIdsRef.current.has(r.id) &&
@@ -935,6 +1014,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
           return {
             ...prev,
             ...active,
+            status: active.status,
             captain_name: active.captain_name || prev.captain_name,
             captain_phone: active.captain_phone || prev.captain_phone,
             vehicle_model: active.vehicle_model || prev.vehicle_model,
@@ -942,7 +1022,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
             captain_avatar: (active as any).captain_avatar || (active as any).avatar_url || (prev as any).captain_avatar || (prev as any).avatar_url,
           };
         });
-      } else {
+      } else if (!activeRideRef.current || cancelledRideIdsRef.current.has(activeRideRef.current.id)) {
         setActiveRide(null);
       }
     } catch {}
@@ -950,7 +1030,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
   const loadRideHistory = async () => {
     try {
-      const rides = await motorideApi.getRides({ passenger_id: currentPassengerId });
+      const effectivePassengerId = currentPassengerId || authUser?.id || '';
+      const rides = await motorideApi.getRides(effectivePassengerId ? { passenger_id: effectivePassengerId } : undefined);
       setRideHistory(rides);
     } catch {}
   };

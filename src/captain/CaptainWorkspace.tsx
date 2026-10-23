@@ -1058,6 +1058,25 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       const updated = await motorideApi.updateRideStatus(activeRide.id, nextStatus, {
         final_distance_km: activeRide.distance_km,
         final_fare: activeRide.final_fare || activeRide.offered_fare,
+        passenger_id: activeRide.passenger_id,
+        passenger_name: activeRide.passenger_name,
+        passenger_phone: activeRide.passenger_phone,
+        pickup_address: activeRide.pickup_address,
+        pickup_lat: activeRide.pickup_lat,
+        pickup_lng: activeRide.pickup_lng,
+        dropoff_address: activeRide.dropoff_address,
+        dropoff_lat: activeRide.dropoff_lat,
+        dropoff_lng: activeRide.dropoff_lng,
+        ride_code: activeRide.ride_code,
+        ride_type: activeRide.ride_type,
+        payment_method: activeRide.payment_method,
+        captain_id: captain?.id || captainId,
+        captain_name: captain?.full_name || safeStorage.getItem('motoride_captain_name') || 'Captain',
+        captain_phone: captain?.phone || safeStorage.getItem('motoride_captain_phone') || '',
+        vehicle_model: captain?.vehicle?.model || safeStorage.getItem('motoride_captain_vehicle_model') || 'Motorcycle',
+        plate_number: captain?.vehicle?.plate_number || safeStorage.getItem('motoride_captain_plate') || '',
+        captain_current_lat: nextStatus === 'captain_arrived' ? activeRide.pickup_lat : captainGps.lat,
+        captain_current_lng: nextStatus === 'captain_arrived' ? activeRide.pickup_lng : captainGps.lng,
       });
 
       if (nextStatus === 'captain_arrived') {
