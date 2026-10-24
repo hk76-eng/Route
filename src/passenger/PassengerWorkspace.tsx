@@ -1672,26 +1672,6 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               activeRide.status === 'captain_arrived' ||
               activeRide.status === 'trip_started') && (
               <div className="flex flex-col gap-4 text-black">
-                {/* When Captain has accepted, show prominent "Captain is on the way" banner */}
-                {activeRide.status === 'captain_accepted' && (
-                  <div className="w-full rounded-2xl bg-sky-500 text-slate-950 px-4 py-3 border-2 border-black font-black flex items-center justify-between shadow-md select-none animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2.5">
-                      <span className="w-3 h-3 rounded-full bg-slate-950 animate-ping shrink-0" />
-                      <div>
-                        <span className="text-xs sm:text-sm font-black uppercase tracking-wide block">
-                          Captain is on the way!
-                        </span>
-                        <span className="text-[11px] font-bold text-slate-900 block">
-                          Heading towards your pickup location
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-[11px] bg-slate-950 text-white px-2.5 py-1 rounded-xl font-bold shrink-0">
-                      En Route
-                    </span>
-                  </div>
-                )}
-
                 {/* Digital Watch on Top of Ride Details (Shown ONLY when captain is on the way to pickup) */}
                 {activeRide.status === 'captain_accepted' && (
                   <DigitalWatchETA
