@@ -675,10 +675,10 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       const effectivePassengerId = currentPassengerId || authUser?.id || '';
 
       const isMyRide =
-        Boolean(currentActiveId && ride.id === currentActiveId) ||
+        Boolean(currentActiveId && (ride.id === currentActiveId || (ride as any).$id === currentActiveId)) ||
         Boolean(ride.passenger_id && effectivePassengerId && ride.passenger_id === effectivePassengerId) ||
         Boolean(currentActive && currentActive.ride_code && currentActive.ride_code === ride.ride_code) ||
-        Boolean(currentActive && (currentActive.status === 'requested' || currentActive.status === 'captain_offered'));
+        Boolean(currentActive && !['trip_completed', 'completed', 'cancelled_by_passenger', 'cancelled_by_captain'].includes(currentActive.status));
 
       if (!isMyRide) return;
 
@@ -745,19 +745,88 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     });
 
     const unsubStatusChanged = realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
+      if (payload?.status === 'captain_arrived') {
+        const currentActive = activeRideRef.current;
+        const currentActiveId = currentActive?.id;
+        const ride = payload?.ride;
+        const rideId = payload?.ride_id || ride?.id || (ride as any)?.$id;
+        const effectivePassengerId = currentPassengerId || authUser?.id || '';
+
+        const isMatch =
+          Boolean(rideId && currentActiveId && rideId === currentActiveId) ||
+          Boolean(ride?.passenger_id && effectivePassengerId && ride.passenger_id === effectivePassengerId) ||
+          Boolean(currentActive && !['trip_completed', 'completed', 'cancelled_by_passenger', 'cancelled_by_captain'].includes(currentActive.status));
+
+        if (isMatch) {
+          setActiveRide((prev) => {
+            const base = prev || currentActive || ride;
+            if (!base) return null;
+            return {
+              ...base,
+              ...(ride || {}),
+              status: 'captain_arrived',
+            };
+          });
+          const pLat = ride?.pickup_lat || currentActive?.pickup_lat || pickup.lat;
+          const pLng = ride?.pickup_lng || currentActive?.pickup_lng || pickup.lng;
+          if (pLat && pLng) {
+            setAnimatedCaptainPos({ lat: pLat, lng: pLng, heading: 45 });
+          }
+        }
+      }
       if (payload?.ride) {
         handleIncomingRideUpdate(payload.ride, payload.status);
       }
     });
 
     const unsubCaptainArrived = realtimeSync.on('CAPTAIN_ARRIVED', (payload: any) => {
+      const currentActive = activeRideRef.current;
+      const currentActiveId = currentActive?.id;
+      const ride = payload?.ride;
+      const rideId = payload?.ride_id || ride?.id || (ride as any)?.$id;
+      const effectivePassengerId = currentPassengerId || authUser?.id || '';
+
+      const isMatch =
+        Boolean(rideId && currentActiveId && rideId === currentActiveId) ||
+        Boolean(ride?.passenger_id && effectivePassengerId && ride.passenger_id === effectivePassengerId) ||
+        Boolean(currentActive && currentActive.ride_code && ride?.ride_code && currentActive.ride_code === ride.ride_code) ||
+        Boolean(currentActive && !['trip_completed', 'completed', 'cancelled_by_passenger', 'cancelled_by_captain'].includes(currentActive.status));
+
+      if (isMatch) {
+        setActiveRide((prev) => {
+          const base = prev || currentActive || ride;
+          if (!base) return null;
+          return {
+            ...base,
+            ...(ride || {}),
+            status: 'captain_arrived',
+            captain_name: ride?.captain_name || base.captain_name || 'Assigned Captain',
+            captain_phone: ride?.captain_phone || base.captain_phone,
+            vehicle_model: ride?.vehicle_model || base.vehicle_model,
+            plate_number: ride?.plate_number || base.plate_number,
+            captain_avatar: ride?.captain_avatar || (ride as any)?.avatar_url || (base as any)?.captain_avatar,
+          };
+        });
+
+        const pLat = ride?.pickup_lat || currentActive?.pickup_lat || pickup.lat;
+        const pLng = ride?.pickup_lng || currentActive?.pickup_lng || pickup.lng;
+        if (pLat && pLng) {
+          setAnimatedCaptainPos({
+            lat: pLat,
+            lng: pLng,
+            heading: 45,
+          });
+        }
+
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([100, 50, 100]);
+          } catch {}
+        }
+      }
+
       if (payload?.ride) {
         handleIncomingRideUpdate(payload.ride, 'captain_arrived');
-      } else if (payload?.ride_id) {
-        const currentActive = activeRideRef.current;
-        if (currentActive && currentActive.id === payload.ride_id) {
-          setActiveRide((prev) => (prev ? { ...prev, status: 'captain_arrived' } : null));
-        }
       }
     });
 

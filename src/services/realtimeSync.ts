@@ -173,7 +173,22 @@ class RealtimeSyncManager {
         } else if (rideData.status === 'captain_accepted') {
           this.emit('RIDE_ACCEPTED', rideData, true);
           this.emit('RIDE_UPDATED', rideData, true);
+        } else if (rideData.status === 'captain_arrived') {
+          this.emit('CAPTAIN_ARRIVED', { ride_id: rideId, ride: rideData, status: 'captain_arrived' }, true);
+          this.emit('RIDE_STATUS_CHANGED', { ride: rideData, status: 'captain_arrived' }, true);
+          this.emit('RIDE_UPDATED', rideData, true);
+        } else if (rideData.status === 'trip_started') {
+          this.emit('RIDE_STATUS_CHANGED', { ride: rideData, status: 'trip_started' }, true);
+          this.emit('RIDE_UPDATED', rideData, true);
+        } else if (rideData.status === 'trip_completed' || rideData.status === 'completed') {
+          this.emit('RIDE_STATUS_CHANGED', { ride: rideData, status: 'trip_completed' }, true);
+          this.emit('RIDE_UPDATED', rideData, true);
+        } else if (rideData.status && rideData.status.includes('cancelled')) {
+          this.emit('RIDE_CANCELLED', { ride_id: rideId, ride: rideData }, true);
+          this.emit('RIDE_STATUS_CHANGED', { ride: rideData, status: rideData.status }, true);
+          this.emit('RIDE_UPDATED', rideData, true);
         } else {
+          this.emit('RIDE_STATUS_CHANGED', { ride: rideData, status: rideData.status }, true);
           this.emit('RIDE_UPDATED', rideData, true);
         }
       });

@@ -672,6 +672,9 @@ motorideRouter.post('/rides/:id/status', (req: Request, res: Response) => {
 
   ridesStore.set(ride.id, ride);
 
+  if (status === 'captain_arrived') {
+    broadcastEvent('CAPTAIN_ARRIVED', { ride_id: ride.id, ride, status: 'captain_arrived' });
+  }
   broadcastEvent('RIDE_STATUS_CHANGED', { ride, status });
   broadcastEvent('RIDE_UPDATED', ride);
 

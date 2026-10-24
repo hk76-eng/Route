@@ -1064,6 +1064,46 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const handleStatusChange = async (nextStatus: any) => {
     if (!activeRide) return;
     try {
+      if (nextStatus === 'captain_arrived') {
+        const optimisticRide: MotorideRide = {
+          ...activeRide,
+          status: 'captain_arrived',
+          captain_current_lat: activeRide.pickup_lat,
+          captain_current_lng: activeRide.pickup_lng,
+          captain_name: captain?.full_name || safeStorage.getItem('motoride_captain_name') || 'Captain',
+          captain_phone: captain?.phone || safeStorage.getItem('motoride_captain_phone') || '',
+          vehicle_model: captain?.vehicle?.model || safeStorage.getItem('motoride_captain_vehicle_model') || 'Motorcycle',
+          plate_number: captain?.vehicle?.plate_number || safeStorage.getItem('motoride_captain_plate') || '',
+        };
+        setActiveRide(optimisticRide);
+        setCaptainGps((prev) => ({
+          ...prev,
+          lat: activeRide.pickup_lat,
+          lng: activeRide.pickup_lng,
+          timestamp: Date.now(),
+        }));
+        // Instant broadcast across MQTT, BroadcastChannel, and Appwrite before network request completes
+        realtimeSync.broadcast('CAPTAIN_ARRIVED', {
+          ride_id: activeRide.id,
+          ride: optimisticRide,
+          status: 'captain_arrived',
+        });
+        realtimeSync.broadcast('RIDE_STATUS_CHANGED', {
+          ride_id: activeRide.id,
+          ride: optimisticRide,
+          status: 'captain_arrived',
+        });
+        realtimeSync.broadcast('RIDE_UPDATED', optimisticRide);
+        motorideApi.updateCaptainLiveLocation({
+          captain_id: captainId,
+          ride_id: activeRide.id,
+          latitude: activeRide.pickup_lat,
+          longitude: activeRide.pickup_lng,
+          heading: calculateBearingDegrees(activeRide.pickup_lat, activeRide.pickup_lng, activeRide.dropoff_lat, activeRide.dropoff_lng),
+          speed: 0,
+        });
+      }
+
       const updated = await motorideApi.updateRideStatus(activeRide.id, nextStatus, {
         final_distance_km: activeRide.distance_km,
         final_fare: activeRide.final_fare || activeRide.offered_fare,

@@ -197,6 +197,39 @@ realtimeSync.on('RIDE_ACCEPTED', (ride: MotorideRide) => {
   }
 });
 
+realtimeSync.on('CAPTAIN_ARRIVED', (payload: any) => {
+  const ride = payload?.ride;
+  const rideId = payload?.ride_id || ride?.id || ride?.$id;
+  if (rideId) {
+    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
+    localRidesStore.set(rideId, {
+      ...existing,
+      ...(ride || {}),
+      id: rideId,
+      status: 'captain_arrived',
+      captain_current_lat: ride?.pickup_lat || existing.pickup_lat || ride?.captain_current_lat || existing.captain_current_lat,
+      captain_current_lng: ride?.pickup_lng || existing.pickup_lng || ride?.captain_current_lng || existing.captain_current_lng,
+    } as MotorideRide);
+    saveLocalRides();
+  }
+});
+
+realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
+  const ride = payload?.ride;
+  const rideId = payload?.ride_id || ride?.id || ride?.$id;
+  const status = payload?.status || ride?.status;
+  if (rideId && status) {
+    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
+    localRidesStore.set(rideId, {
+      ...existing,
+      ...(ride || {}),
+      id: rideId,
+      status,
+    } as MotorideRide);
+    saveLocalRides();
+  }
+});
+
 realtimeSync.on('RIDE_OFFER_RECEIVED', (payload: any) => {
   const ride = payload?.ride;
   const offer = payload?.offer;
@@ -714,6 +747,17 @@ export const motorideApi = {
     if (extra?.cancellation_reason) updatePayload.cancellation_reason = extra.cancellation_reason;
     if (extra?.final_distance_km) updatePayload.distance_km = extra.final_distance_km;
     if (extra?.final_fare) updatePayload.final_fare = extra.final_fare;
+    if (status === 'captain_arrived') {
+      const pLat = updatedRide.pickup_lat || extra?.pickup_lat;
+      const pLng = updatedRide.pickup_lng || extra?.pickup_lng;
+      if (pLat) updatePayload.captain_current_lat = pLat;
+      if (pLng) updatePayload.captain_current_lng = pLng;
+      if (updatedRide.captain_id) updatePayload.captain_id = updatedRide.captain_id;
+      if (updatedRide.captain_name) updatePayload.captain_name = updatedRide.captain_name;
+      if (updatedRide.captain_phone) updatePayload.captain_phone = updatedRide.captain_phone;
+      if (updatedRide.vehicle_model) updatePayload.vehicle_model = updatedRide.vehicle_model;
+      if (updatedRide.plate_number) updatePayload.plate_number = updatedRide.plate_number;
+    }
     if (status === 'trip_started') updatePayload.trip_started_at = new Date().toISOString();
     if (status === 'trip_completed' || status === 'completed') {
       const nowIso = new Date().toISOString();
@@ -736,6 +780,13 @@ export const motorideApi = {
       },
       { ride: updatedRide }
     ).catch(() => {});
+
+    // Redundant broadcast to guarantee instant passenger UI update
+    if (status === 'captain_arrived') {
+      realtimeSync.broadcast('CAPTAIN_ARRIVED', { ride_id: rideId, ride: updatedRide, status: 'captain_arrived' });
+    }
+    realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: updatedRide, status });
+    realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
 
     return updatedRide;
   },
