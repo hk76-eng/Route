@@ -44,6 +44,7 @@ import {
   History,
   Volume2,
   Zap,
+  Lock,
 } from 'lucide-react';
 import { MotorideRideHistoryModal } from '../components/MotorideRideHistoryModal';
 
@@ -611,12 +612,12 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       setCountdownSeconds(25);
     }
 
+    // Do NOT auto-decline or auto-pass requests automatically. Wait for manual captain action.
     const interval = setInterval(() => {
       setCountdownSeconds((prev) => {
         if (prev <= 1) {
-          // Timer expired: auto-pass to next request
-          setDeclinedRideIds((declined) => new Set(declined).add(currentDispatchRide.id));
-          return 25;
+          // Keep showing 0s waiting state without auto-dismissing
+          return 0;
         }
         return prev - 1;
       });
@@ -1409,39 +1410,81 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             )}
           </div>
 
-          {/* Workflow Step Action Buttons */}
+          {/* Workflow Step Action Buttons with Screen Lock Indicators */}
           <div className="flex flex-col gap-2 pt-2">
             {activeRide.status === 'captain_accepted' && (
-              <button
-                type="button"
-                onClick={() => handleStatusChange('captain_arrived')}
-                className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
-              >
-                <MapPin className="w-4 h-4 stroke-[2.5] text-white" />
-                <span className="text-white">I Have Arrived at Pickup</span>
-              </button>
+              <>
+                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border-2 border-amber-600/30 text-amber-950 font-black text-xs">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>SCREEN LOCKED • ON THE WAY TO PICKUP</span>
+                  </div>
+                  <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    Heading to A
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 font-semibold px-1">
+                  Drive to Location A. When you reach the passenger pickup spot, tap below:
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('captain_arrived')}
+                  className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
+                >
+                  <MapPin className="w-4 h-4 stroke-[2.5] text-white" />
+                  <span className="text-white">I Have Arrived at Pickup</span>
+                </button>
+              </>
             )}
 
             {activeRide.status === 'captain_arrived' && (
-              <button
-                type="button"
-                onClick={() => handleStatusChange('trip_started')}
-                className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
-              >
-                <Navigation className="w-4 h-4 stroke-[2.5] text-white fill-white" />
-                <span className="text-white">Passenger Boarded • Start Trip</span>
-              </button>
+              <>
+                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-600/40 text-emerald-950 font-black text-xs">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-emerald-800 shrink-0" />
+                    <span>SCREEN LOCKED • WAITING FOR PASSENGER</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    At Pickup
+                  </span>
+                </div>
+                <div className="p-3 rounded-2xl bg-slate-100 border border-slate-300 flex items-center justify-between text-xs">
+                  <span className="text-slate-800 font-bold">Ask Passenger for Start OTP:</span>
+                  <span className="font-mono-num font-black text-sm bg-black text-emerald-400 px-3 py-1 rounded-lg">
+                    #{activeRide.ride_code ? activeRide.ride_code.replace(/[^0-9]/g, '') || '8421' : '8421'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('trip_started')}
+                  className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
+                >
+                  <Navigation className="w-4 h-4 stroke-[2.5] text-white fill-white" />
+                  <span className="text-white">Passenger Boarded • Start Trip</span>
+                </button>
+              </>
             )}
 
             {activeRide.status === 'trip_started' && (
-              <button
-                type="button"
-                onClick={() => handleStatusChange('trip_completed')}
-                className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
-              >
-                <CheckCircle2 className="w-4 h-4 stroke-[2.5] text-white" />
-                <span className="text-white">Arrived at Destination • Complete Trip</span>
-              </button>
+              <>
+                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-950 text-white font-black text-xs border border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>SCREEN LOCKED • TRIP IN PROGRESS</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500 text-slate-950 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    Driving to B
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStatusChange('trip_completed')}
+                  className="w-full py-3.5 rounded-2xl bg-black hover:bg-slate-900 text-white font-black text-xs shadow-xl transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-2 border border-slate-800"
+                >
+                  <CheckCircle2 className="w-4 h-4 stroke-[2.5] text-white" />
+                  <span className="text-white">Arrived at Destination • Complete Trip</span>
+                </button>
+              </>
             )}
 
             <button
@@ -1491,6 +1534,17 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
           </div>
 
           <div className="p-4 sm:p-5 flex flex-col gap-3.5">
+            {/* Action Required Banner: Waits for manual action, does not auto-advance */}
+            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
+              <div className="flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>NEW RIDE REQUEST • ACTION REQUIRED</span>
+              </div>
+              <span className="text-[10px] uppercase font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded-md">
+                Manual Action
+              </span>
+            </div>
+
             {/* Top Bar: Uber Service Tag + Queue Info + SVG Circular Countdown Dial */}
             <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
               <div className="flex items-center gap-2">
