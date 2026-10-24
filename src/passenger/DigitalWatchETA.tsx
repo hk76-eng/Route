@@ -85,17 +85,15 @@ export const DigitalWatchETA: React.FC<DigitalWatchETAProps> = ({
         className="cursor-pointer group select-none animate-in fade-in slide-in-from-top-2 duration-200"
       >
         <div className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-black text-white border border-slate-800 shadow-xl backdrop-blur-md">
-          <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
           
           <div className="flex items-center gap-1.5 font-mono text-xs sm:text-sm font-bold tracking-wide">
-            <span className="text-sky-300 font-sans text-xs uppercase font-extrabold">Captain is on the way</span>
-            <span className="text-slate-500">•</span>
             <span className="text-slate-400 font-sans text-xs uppercase font-semibold">ETA</span>
             <span className="text-emerald-400 font-bold">
               {formattedMinutes}{colonBlink ? ':' : ' '}{formattedSeconds}
             </span>
-            <span className="font-sans text-xs text-slate-300 font-medium">min</span>
-            <span className="text-slate-400 font-mono text-xs font-semibold">({distanceFormatted})</span>
+            <span className="font-sans text-xs text-slate-300 font-medium">minits</span>
+            <span className="text-slate-400 font-mono text-xs font-semibold">{distanceFormatted} away</span>
           </div>
         </div>
       </div>
@@ -106,41 +104,28 @@ export const DigitalWatchETA: React.FC<DigitalWatchETAProps> = ({
   // Variant 2: Simple Digital ETA Box on Top of Ride Details Card
   // ----------------------------------------------------
   return (
-    <div className="w-full rounded-2xl bg-black text-white p-3.5 border border-black shadow-md select-none flex flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping shrink-0" />
-          <span className="text-xs sm:text-sm font-black text-sky-300 uppercase tracking-wide">
-            Captain is on the way
+    <div className="w-full rounded-2xl bg-black text-white px-4 py-3.5 border border-black shadow-md select-none flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <div className="flex items-center gap-2 font-mono text-base sm:text-lg font-bold tracking-wide">
+          <span className="text-slate-400 font-sans text-sm sm:text-base font-semibold">ETA</span>
+          <span className="text-emerald-400 font-bold tracking-wider">
+            {formattedMinutes}
+            <span className={colonBlink ? 'opacity-100' : 'opacity-20'}>:</span>
+            {formattedSeconds}
           </span>
-        </div>
-        <div className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-800/80 font-bold">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-          <span>LIVE TRACKING</span>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between pt-1.5 border-t border-slate-800">
-        <div className="flex items-center gap-3">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-          <div className="flex items-center gap-2 font-mono text-base sm:text-lg font-bold tracking-wide">
-            <span className="text-slate-400 font-sans text-xs sm:text-sm font-semibold">ETA</span>
-            <span className="text-emerald-400 font-bold tracking-wider">
-              {formattedMinutes}
-              <span className={colonBlink ? 'opacity-100' : 'opacity-20'}>:</span>
-              {formattedSeconds}
-            </span>
-            <span className="text-slate-300 font-sans font-medium text-xs sm:text-sm">
-              minits
-            </span>
-          </div>
-        </div>
-
-        <div className="text-right">
-          <span className="text-slate-300 font-mono text-xs sm:text-sm font-black">
+          <span className="text-slate-300 font-sans font-medium text-xs sm:text-sm">
+            minits
+          </span>
+          <span className="text-slate-400 font-mono text-xs sm:text-sm font-semibold ml-0.5">
             {distanceFormatted} away
           </span>
         </div>
+      </div>
+
+      <div className="hidden sm:flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-800/80 font-bold">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+        <span>LIVE</span>
       </div>
     </div>
   );

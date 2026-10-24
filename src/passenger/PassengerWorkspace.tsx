@@ -2588,9 +2588,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               <div className="min-w-0 flex flex-col">
                 <span className="text-xs font-bold text-white truncate">
                   {activeRide
-                    ? activeRide.status === 'captain_accepted'
-                      ? `${activeRide.ride_code} • Captain is on the way!`
-                      : `${activeRide.ride_code} • ${activeRide.status.replace(/_/g, ' ')}`
+                    ? `${activeRide.ride_code} • ${activeRide.status.replace(/_/g, ' ')}`
                     : `${pickup.name ? pickup.name.split(',')[0] : 'Choose Pickup'} → ${dropoff.name.split(',')[0]}`}
                 </span>
                 <span className="text-[11px] text-emerald-400 font-mono-num font-semibold truncate">
