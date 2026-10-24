@@ -480,6 +480,13 @@ export const motorideApi = {
     return payload;
   },
 
+  cacheRide(ride: MotorideRide): void {
+    if (!ride || !ride.id) return;
+    const existing = localRidesStore.get(ride.id) || ({} as MotorideRide);
+    localRidesStore.set(ride.id, { ...existing, ...ride });
+    saveLocalRides();
+  },
+
   async acceptRide(
     rideId: string,
     captainData: {
@@ -490,9 +497,16 @@ export const motorideApi = {
       vehicle_model?: string;
       plate_number?: string;
       accepted_fare?: number;
-    }
+    },
+    existingRideData?: Partial<MotorideRide>
   ): Promise<MotorideRide> {
-    const existing = localRidesStore.get(rideId) || ({ id: rideId } as MotorideRide);
+    const fromStore = localRidesStore.get(rideId);
+    const existing: MotorideRide = {
+      ...(existingRideData || {}),
+      ...(fromStore || {}),
+      id: rideId,
+    } as MotorideRide;
+
     const updatedRide: MotorideRide = {
       ...existing,
       id: rideId,
@@ -513,6 +527,7 @@ export const motorideApi = {
     // Broadcast instantly to all browsers and devices
     realtimeSync.broadcast('RIDE_ACCEPTED', updatedRide);
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);
+    realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: updatedRide, status: 'captain_accepted' });
 
     await safeAppwriteUpdateDocument('rides', rideId, updatedRide);
 
@@ -521,7 +536,7 @@ export const motorideApi = {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(captainData),
+        body: JSON.stringify({ ...captainData, ride: updatedRide }),
       },
       { ride: updatedRide }
     ).catch(() => {});

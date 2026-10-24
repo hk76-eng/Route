@@ -128,6 +128,30 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     activeRideRef.current = activeRide;
   }, [activeRide]);
 
+  // Audio chime and vibration alert when Captain accepts ride request
+  const playCaptainAcceptedTune = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      if (ctx.state === 'suspended') ctx.resume();
+      // Upbeat 3-tone chime (C5, G5, C6) for captain acceptance
+      [523.25, 783.99, 1046.50].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
+        gain.gain.setValueAtTime(0, ctx.currentTime + idx * 0.12);
+        gain.gain.linearRampToValueAtTime(0.22, ctx.currentTime + idx * 0.12 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + idx * 0.12);
+        osc.stop(ctx.currentTime + idx * 0.12 + 0.4);
+      });
+    } catch {}
+  };
+
   // Audio chime and vibration alert when Captain arrives at pickup location
   const playArrivalTune = () => {
     try {
@@ -153,7 +177,14 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   };
 
   useEffect(() => {
-    if (activeRide?.status === 'captain_arrived' && prevStatusRef.current !== 'captain_arrived') {
+    if (activeRide?.status === 'captain_accepted' && prevStatusRef.current !== 'captain_accepted') {
+      playCaptainAcceptedTune();
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        try {
+          navigator.vibrate([120, 60, 120]);
+        } catch {}
+      }
+    } else if (activeRide?.status === 'captain_arrived' && prevStatusRef.current !== 'captain_arrived') {
       playArrivalTune();
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         try {
@@ -646,11 +677,20 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       const isMyRide =
         Boolean(currentActiveId && ride.id === currentActiveId) ||
         Boolean(ride.passenger_id && effectivePassengerId && ride.passenger_id === effectivePassengerId) ||
-        Boolean(currentActive && currentActive.ride_code && currentActive.ride_code === ride.ride_code);
+        Boolean(currentActive && currentActive.ride_code && currentActive.ride_code === ride.ride_code) ||
+        Boolean(currentActive && (currentActive.status === 'requested' || currentActive.status === 'captain_offered'));
 
       if (!isMyRide) return;
 
-      const targetStatus = explicitStatus || ride.status;
+      // Clean non-null and non-undefined properties from incoming payload
+      const cleanRide: Record<string, any> = {};
+      Object.entries(ride).forEach(([k, v]) => {
+        if (v !== undefined && v !== null) {
+          cleanRide[k] = v;
+        }
+      });
+
+      const targetStatus = explicitStatus || cleanRide.status || ride.status;
 
       if (targetStatus && targetStatus.includes('cancelled')) {
         cancelledRideIdsRef.current.add(ride.id);
@@ -660,23 +700,33 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
           const base = prev || currentActive || ride;
           const merged: MotorideRide = {
             ...base,
-            ...ride,
-            status: (targetStatus || ride.status || base.status) as MotorideRideStatus,
-            captain_name: ride.captain_name || base.captain_name,
-            captain_phone: ride.captain_phone || base.captain_phone,
-            vehicle_model: ride.vehicle_model || base.vehicle_model,
-            plate_number: ride.plate_number || base.plate_number,
-            captain_avatar: (ride as any).captain_avatar || (ride as any).avatar_url || (base as any).captain_avatar || (base as any).avatar_url,
-            captain_current_lat: ride.captain_current_lat ?? base.captain_current_lat,
-            captain_current_lng: ride.captain_current_lng ?? base.captain_current_lng,
-            captain_heading: ride.captain_heading ?? base.captain_heading,
+            ...cleanRide,
+            status: (targetStatus || cleanRide.status || ride.status || base.status) as MotorideRideStatus,
+            captain_name: cleanRide.captain_name || base.captain_name || 'Assigned Captain',
+            captain_phone: cleanRide.captain_phone || base.captain_phone,
+            vehicle_model: cleanRide.vehicle_model || base.vehicle_model,
+            plate_number: cleanRide.plate_number || base.plate_number,
+            captain_avatar: cleanRide.captain_avatar || (cleanRide as any).avatar_url || (base as any).captain_avatar || (base as any).avatar_url,
+            captain_current_lat: cleanRide.captain_current_lat ?? base.captain_current_lat,
+            captain_current_lng: cleanRide.captain_current_lng ?? base.captain_current_lng,
+            captain_heading: cleanRide.captain_heading ?? base.captain_heading,
           };
           return merged;
         });
 
-        if (targetStatus === 'captain_arrived') {
-          const pLat = ride.pickup_lat || currentActive?.pickup_lat || pickup.lat;
-          const pLng = ride.pickup_lng || currentActive?.pickup_lng || pickup.lng;
+        if (targetStatus === 'captain_accepted') {
+          const pLat = cleanRide.pickup_lat || currentActive?.pickup_lat || pickup.lat;
+          const pLng = cleanRide.pickup_lng || currentActive?.pickup_lng || pickup.lng;
+          if (pLat && pLng) {
+            setAnimatedCaptainPos({
+              lat: Number((pLat - 0.0055).toFixed(6)),
+              lng: Number((pLng - 0.0045).toFixed(6)),
+              heading: 45,
+            });
+          }
+        } else if (targetStatus === 'captain_arrived') {
+          const pLat = cleanRide.pickup_lat || currentActive?.pickup_lat || pickup.lat;
+          const pLng = cleanRide.pickup_lng || currentActive?.pickup_lng || pickup.lng;
           if (pLat && pLng) {
             setAnimatedCaptainPos({
               lat: pLat,
@@ -1622,6 +1672,26 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               activeRide.status === 'captain_arrived' ||
               activeRide.status === 'trip_started') && (
               <div className="flex flex-col gap-4 text-black">
+                {/* When Captain has accepted, show prominent "Captain is on the way" banner */}
+                {activeRide.status === 'captain_accepted' && (
+                  <div className="w-full rounded-2xl bg-sky-500 text-slate-950 px-4 py-3 border-2 border-black font-black flex items-center justify-between shadow-md select-none animate-in fade-in duration-200">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-3 h-3 rounded-full bg-slate-950 animate-ping shrink-0" />
+                      <div>
+                        <span className="text-xs sm:text-sm font-black uppercase tracking-wide block">
+                          Captain is on the way!
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-900 block">
+                          Heading towards your pickup location
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] bg-slate-950 text-white px-2.5 py-1 rounded-xl font-bold shrink-0">
+                      En Route
+                    </span>
+                  </div>
+                )}
+
                 {/* Digital Watch on Top of Ride Details (Shown ONLY when captain is on the way to pickup) */}
                 {activeRide.status === 'captain_accepted' && (
                   <DigitalWatchETA
@@ -2538,7 +2608,9 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               <div className="min-w-0 flex flex-col">
                 <span className="text-xs font-bold text-white truncate">
                   {activeRide
-                    ? `${activeRide.ride_code} • ${activeRide.status.replace(/_/g, ' ')}`
+                    ? activeRide.status === 'captain_accepted'
+                      ? `${activeRide.ride_code} • Captain is on the way!`
+                      : `${activeRide.ride_code} • ${activeRide.status.replace(/_/g, ' ')}`
                     : `${pickup.name ? pickup.name.split(',')[0] : 'Choose Pickup'} → ${dropoff.name.split(',')[0]}`}
                 </span>
                 <span className="text-[11px] text-emerald-400 font-mono-num font-semibold truncate">

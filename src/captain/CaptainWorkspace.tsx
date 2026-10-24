@@ -443,6 +443,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     // Listen to real-time events
     const unsubRideCreated = realtimeSync.on('RIDE_CREATED', (newRide: MotorideRide) => {
       if (!newRide || !newRide.id) return;
+      motorideApi.cacheRide(newRide);
       // Clear ride ID from decline set so newly created ride always rings for captain
       setDeclinedRideIds((prev) => {
         if (prev.has(newRide.id)) {
@@ -471,6 +472,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
     const unsubRideUpdated = realtimeSync.on('RIDE_UPDATED', (updatedRide: MotorideRide) => {
       if (!updatedRide || !updatedRide.id) return;
+      motorideApi.cacheRide(updatedRide);
 
       if (updatedRide.captain_id === captainId) {
         if (updatedRide.status === 'trip_completed' || updatedRide.status === 'completed' || updatedRide.status.includes('cancelled')) {
@@ -518,6 +520,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
       );
       if (valid.length > 0) {
+        valid.forEach((r) => motorideApi.cacheRide(r));
         setAvailableRides((prev) => {
           const map = new Map<string, MotorideRide>();
           valid.forEach((r) => map.set(r.id, r));
@@ -792,6 +795,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         const realRides = list.filter(
           (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
         );
+        realRides.forEach((r) => motorideApi.cacheRide(r));
         setAvailableRides(realRides);
       } else {
         setAvailableRides([]);
@@ -813,6 +817,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
               r.status === 'trip_started')
         );
         if (current) {
+          motorideApi.cacheRide(current);
           setActiveRide(current);
         }
       }
@@ -865,15 +870,19 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       const resolvedPlate = savedPlate || captain?.vehicle?.plate_number || authUser?.plateNumber || '';
       const captainSavedAvatar = savedAvatar || captain?.avatar_url || authUser?.avatarUrl || undefined;
 
-      const updated = await motorideApi.acceptRide(ride.id, {
-        captain_id: captain?.id || captainId,
-        captain_name: resolvedName,
-        captain_avatar: captainSavedAvatar,
-        captain_phone: resolvedPhone,
-        vehicle_model: resolvedModel,
-        plate_number: resolvedPlate,
-        accepted_fare: ride.offered_fare,
-      });
+      const updated = await motorideApi.acceptRide(
+        ride.id,
+        {
+          captain_id: captain?.id || captainId,
+          captain_name: resolvedName,
+          captain_avatar: captainSavedAvatar,
+          captain_phone: resolvedPhone,
+          vehicle_model: resolvedModel,
+          plate_number: resolvedPlate,
+          accepted_fare: ride.offered_fare,
+        },
+        ride
+      );
       setActiveRide(updated);
       setInspectedRide(null);
       setAvailableRides((prev) => prev.filter((r) => r.id !== ride.id));
@@ -1611,151 +1620,59 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     );
   };
 
-  // Uber-Style Searching Trips / Offline Status Floating Card
+  // Bottom Finding Trips Bar: Blue line at bottom and flashing text ("Finding trips" & "You are online") only
   const renderSearchingTripsCard = () => {
     return (
-      <div className="fixed sm:absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-[1000] w-[94%] sm:w-auto min-w-[340px] max-w-lg transition-all duration-300">
-        <div className="relative bg-slate-950/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-4 shadow-2xl flex items-center justify-between gap-4 text-white ring-1 ring-white/10 overflow-hidden">
-          {/* Finding Trips Blue Swing Line (Left to Right and Right to Left) */}
-          {isOnline && (
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-slate-900/90 overflow-hidden">
-              <div className="h-full w-1/3 bg-gradient-to-r from-transparent via-blue-400 via-cyan-300 to-transparent rounded-full animate-swing-line shadow-[0_0_14px_rgba(56,189,248,1)]" />
+      <div className="fixed sm:absolute bottom-0 left-0 right-0 z-[1000] flex flex-col items-center pointer-events-none pb-0">
+        {/* Flashing Text Capsule Only */}
+        <div className="pointer-events-auto mb-3 transition-all duration-300">
+          {fareSettings?.require_admin_approval_for_rides && captain && !captain.is_approved ? (
+            <div className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-950/95 border border-amber-500/50 backdrop-blur-xl shadow-2xl text-xs sm:text-sm font-extrabold text-amber-400">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Account Pending Approval</span>
             </div>
-          )}
-
-          {/* Status info */}
-          <div className="flex items-center gap-3 min-w-0">
-            {isOnline ? (
-              onlineFlashStep === 0 ? (
-                <div
-                  key="icon-radar"
-                  className="animate-text-flash relative flex items-center justify-center w-10 h-10 rounded-2xl bg-blue-500/15 border border-blue-500/30 shrink-0 shadow-[0_0_15px_rgba(59,130,246,0.25)]"
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping absolute" />
-                  <Radio className="w-5 h-5 text-blue-400 relative z-10" />
-                </div>
-              ) : (
-                <div
-                  key="icon-online"
-                  className="animate-text-flash relative flex items-center justify-center w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 shrink-0 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping absolute" />
-                  <span className="w-3.5 h-3.5 rounded-full bg-emerald-400 relative z-10 shadow-[0_0_10px_rgba(16,185,129,0.9)]" />
-                </div>
-              )
-            ) : (
-              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center shrink-0">
-                <Power className="w-5 h-5 text-rose-400" />
+          ) : isOnline ? (
+            onlineFlashStep === 0 ? (
+              <div
+                key="flash-bottom-finding"
+                className="animate-text-flash flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-slate-950/95 border border-sky-500/50 backdrop-blur-xl shadow-2xl text-xs sm:text-sm font-black text-sky-300 select-none tracking-wide"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-ping shrink-0" />
+                <span>Finding trips</span>
+                <span className="inline-flex gap-1 items-center ml-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-300 animate-pulse delay-150" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse delay-300" />
+                </span>
               </div>
-            )}
-
-            <div className="min-w-0">
-              {fareSettings?.require_admin_approval_for_rides && captain && !captain.is_approved ? (
-                <>
-                  <div className="text-sm font-extrabold text-amber-400">Account Pending Approval</div>
-                  <div className="text-[11px] text-slate-400">Admin will verify your captain account</div>
-                </>
-              ) : isOnline ? (
-                <>
-                  {/* Flashes text "Finding trips" and "You are online" one by one */}
-                  {onlineFlashStep === 0 ? (
-                    <div
-                      key="flash-finding"
-                      className="animate-text-flash text-sm font-extrabold text-white flex items-center gap-2"
-                    >
-                      <span className="tracking-tight">Finding trips</span>
-                      <span className="inline-flex gap-1 items-center">
-                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse delay-150" />
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse delay-300" />
-                      </span>
-                    </div>
-                  ) : (
-                    <div
-                      key="flash-online"
-                      className="animate-text-flash text-sm font-extrabold text-white flex items-center gap-2"
-                    >
-                      <span className="tracking-tight text-emerald-400">You are online</span>
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-[10px] font-black text-emerald-400 uppercase tracking-wider">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                        <span>Live</span>
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Finding trips blue swing line under title (Left to Right and Right to Left) */}
-                  <div className="relative w-40 sm:w-48 h-1.5 bg-slate-900/90 rounded-full overflow-hidden my-1.5 border border-blue-500/20 shadow-inner">
-                    <div className="absolute inset-y-0 w-20 bg-gradient-to-r from-transparent via-sky-400 via-cyan-300 to-transparent rounded-full animate-swing-line shadow-[0_0_10px_rgba(56,189,248,0.95)]" />
-                  </div>
-
-                  {onlineFlashStep === 0 ? (
-                    <div
-                      key="sub-finding"
-                      className="animate-text-flash text-[11px] text-slate-400 font-medium truncate"
-                    >
-                      Matching with nearby passengers
-                    </div>
-                  ) : (
-                    <div
-                      key="sub-online"
-                      className="animate-text-flash text-[11px] text-slate-400 font-medium truncate"
-                    >
-                      Ready to accept ride requests • GPS active
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div className="text-sm font-extrabold text-white">You're Offline</div>
-                  <div className="text-[11px] text-slate-400">Go online to receive ride requests</div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Action or Today's Stats & Test Simulator */}
-          {isOnline ? (
-            <div className="flex items-center gap-3 shrink-0 pl-3 border-l border-slate-800">
+            ) : (
+              <div
+                key="flash-bottom-online"
+                className="animate-text-flash flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-slate-950/95 border border-emerald-500/50 backdrop-blur-xl shadow-2xl text-xs sm:text-sm font-black text-emerald-300 select-none tracking-wide"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span>You are online</span>
+              </div>
+            )
+          ) : (
+            <div className="flex items-center justify-center gap-3 px-5 py-2.5 rounded-full bg-slate-950/95 border border-slate-800 backdrop-blur-xl shadow-2xl">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+              <span className="text-xs sm:text-sm font-black text-slate-300">You're Offline</span>
               <button
                 type="button"
-                onClick={handleSimulateIncomingRide}
-                className="px-2.5 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 hover:text-blue-200 font-bold text-[11px] flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-xs"
-                title="Test Uber incoming ride dispatch"
+                onClick={handleToggleOnline}
+                className="ml-2 px-3.5 py-1 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer shadow-md transition-all active:scale-95"
               >
-                <Zap className="w-3.5 h-3.5 text-blue-400 fill-blue-400/30" />
-                <span>Test Request</span>
+                Go Online
               </button>
-
-              <div className="text-right">
-                <div className="text-sm font-black font-mono-num text-emerald-400">
-                  ₹{todayIncome}
-                </div>
-                <div className="text-[10px] text-slate-400 font-semibold">
-                  {todayCompletedRidesCount} {todayCompletedRidesCount === 1 ? 'trip' : 'trips'}
-                </div>
-              </div>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleToggleOnline}
-              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg transition-all active:scale-95 cursor-pointer shrink-0"
-            >
-              Go Online
-            </button>
           )}
         </div>
 
-        {/* Reset declined/skipped rides helper */}
-        {isOnline && declinedRideIds.size > 0 && (
-          <div className="text-center mt-2">
-            <button
-              type="button"
-              onClick={handleResetDeclinedRides}
-              className="text-[11px] text-slate-400 hover:text-white underline underline-offset-2 transition-colors cursor-pointer bg-black/70 px-3 py-1 rounded-full backdrop-blur-xs border border-white/10"
-            >
-              Reset {declinedRideIds.size} skipped {declinedRideIds.size === 1 ? 'request' : 'requests'}
-            </button>
+        {/* Upper showing blue line placed at bottom: scanning line across bottom of screen */}
+        {isOnline && (
+          <div className="w-full h-1.5 sm:h-2 bg-slate-950/90 overflow-hidden relative shadow-[0_-2px_14px_rgba(56,189,248,0.7)] border-t border-sky-500/20">
+            <div className="h-full w-1/4 sm:w-1/5 bg-gradient-to-r from-transparent via-blue-400 via-cyan-300 to-transparent rounded-full animate-swing-line shadow-[0_0_16px_rgba(56,189,248,1)]" />
           </div>
         )}
       </div>
@@ -1829,41 +1746,6 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         </div>
       ) : (
         <>
-          {/* Finding Trips Blue Swing Line across top of screen when Online */}
-          {isOnline && !currentDispatchRide && (
-            <div className="absolute top-0 left-0 right-0 h-1 sm:h-1.5 z-20 bg-slate-950/70 overflow-hidden pointer-events-none shadow-[0_2px_12px_rgba(56,189,248,0.35)]">
-              <div className="h-full w-1/4 sm:w-1/5 bg-gradient-to-r from-transparent via-blue-400 via-cyan-300 to-transparent rounded-full animate-swing-line shadow-[0_0_14px_rgba(56,189,248,1)]" />
-            </div>
-          )}
-
-          {/* Top Floating Status Indicator flashing Finding trips and You are online one by one */}
-          {isOnline && !currentDispatchRide && (
-            <div className="fixed sm:absolute top-3.5 sm:top-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none transition-all duration-300">
-              {onlineFlashStep === 0 ? (
-                <div
-                  key="top-pill-finding"
-                  className="animate-text-flash flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-950/90 border border-sky-500/40 backdrop-blur-xl shadow-xl shadow-black/70 text-xs font-bold text-sky-300"
-                >
-                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping" />
-                  <span>Finding trips</span>
-                  <span className="inline-flex gap-1 items-center ml-0.5">
-                    <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse" />
-                    <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse delay-150" />
-                    <span className="w-1 h-1 rounded-full bg-sky-400 animate-pulse delay-300" />
-                  </span>
-                </div>
-              ) : (
-                <div
-                  key="top-pill-online"
-                  className="animate-text-flash flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-950/90 border border-emerald-500/40 backdrop-blur-xl shadow-xl shadow-black/70 text-xs font-bold text-emerald-300"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>You are online</span>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Background Street View Map filling 100% of the canvas */}
           <div className="absolute inset-0 w-full h-full z-0">
             {renderCaptainMap(true)}
