@@ -612,12 +612,12 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       setCountdownSeconds(25);
     }
 
-    // Do NOT auto-decline or auto-pass requests automatically. Wait for manual captain action.
     const interval = setInterval(() => {
       setCountdownSeconds((prev) => {
         if (prev <= 1) {
-          // Keep showing 0s waiting state without auto-dismissing
-          return 0;
+          // Timer expired: auto-pass to next request
+          setDeclinedRideIds((declined) => new Set(declined).add(currentDispatchRide.id));
+          return 25;
         }
         return prev - 1;
       });

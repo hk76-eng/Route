@@ -1289,11 +1289,12 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       setOfferCountdownSeconds(25);
     }
 
-    // Do NOT auto-decline counter offers automatically. Wait for manual passenger action.
     const interval = setInterval(() => {
       setOfferCountdownSeconds((prev) => {
         if (prev <= 1) {
-          return 0;
+          // Timer reached 0: automatically pass this offer to next
+          setDeclinedOfferIds((old) => new Set(old).add(currentOffer.id));
+          return 25;
         }
         return prev - 1;
       });
