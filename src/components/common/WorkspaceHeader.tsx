@@ -44,12 +44,12 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2.5">
             <img
-              src="/motoride-logo.png"
+              src="/route-logo.png"
               alt="Route"
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-xl object-cover bg-black border border-white/20 shadow-md shadow-black/80 shrink-0"
+              className="w-9 h-9 rounded-xl object-contain bg-black border border-white/20 shadow-md shadow-black/80 shrink-0"
               onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = 'none';
+                (e.currentTarget as HTMLImageElement).src = '/motoride-logo.png';
               }}
             />
             <div className="flex items-center gap-1.5 flex-wrap">

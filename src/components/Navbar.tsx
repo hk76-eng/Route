@@ -72,12 +72,12 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
           <img
-            src="/motoride-logo.png"
+            src="/route-logo.png"
             alt="Route"
             referrerPolicy="no-referrer"
-            className="w-10 h-10 rounded-xl object-cover bg-black border border-white/20 shadow-lg shadow-black/60 shrink-0"
+            className="w-10 h-10 rounded-xl object-contain bg-black border border-white/20 shadow-lg shadow-black/60 shrink-0"
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              (e.currentTarget as HTMLImageElement).src = '/motoride-logo.png';
             }}
           />
           <div>

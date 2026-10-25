@@ -262,12 +262,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({
       <header className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-white/20 bg-black">
         <div className="flex items-center gap-3">
           <img
-            src="/motoride-logo.png"
+            src="/route-logo.png"
             alt="Route"
             referrerPolicy="no-referrer"
-            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl object-cover bg-black border border-white/30 shadow-lg shadow-black/90 shrink-0"
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl object-contain bg-black border border-white/30 shadow-lg shadow-black/90 shrink-0"
             onError={(e) => {
-              (e.currentTarget as HTMLImageElement).style.display = 'none';
+              (e.currentTarget as HTMLImageElement).src = '/motoride-logo.png';
             }}
           />
           <div>
