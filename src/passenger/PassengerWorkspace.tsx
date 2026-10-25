@@ -2003,7 +2003,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-black animate-pulse" />
                 <h2 className="text-sm sm:text-base font-black text-black tracking-tight">
-                  Motoride Booking
+                  Route Booking
                 </h2>
               </div>
 

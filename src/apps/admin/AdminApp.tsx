@@ -20,12 +20,12 @@ export function AdminApp() {
   });
 
   useEffect(() => {
-    document.title = 'MotoRide — Admin Console';
+    document.title = 'Route — Admin Console';
   }, []);
 
   const handleAuthenticated = (user: AuthUser) => {
     if (user.role !== 'admin' && user.email.toLowerCase() !== 'freelanceseoservices01@gmail.com') {
-      alert('Access Denied: Only platform administrators can access the MotoRide Admin Console.');
+      alert('Access Denied: Only platform administrators can access the Route Admin Console.');
       return;
     }
     const adminUser: AuthUser = {
@@ -46,7 +46,7 @@ export function AdminApp() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col">
         <div className="bg-purple-950/60 border-b border-purple-500/20 px-4 py-2 text-center text-xs text-purple-300 font-medium">
-          🛡️ <strong>MotoRide Admin Console</strong> • Secure administrator portal with database-backed role verification
+          🛡️ <strong>Route Admin Console</strong> • Secure administrator portal with database-backed role verification
         </div>
         <AuthPage
           onAuthenticated={handleAuthenticated}

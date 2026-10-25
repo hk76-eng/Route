@@ -64,7 +64,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
             <div className="flex flex-col gap-1">
               <h2 className="text-xl font-black tracking-tight text-white">
-                Motoride Encountered an Issue
+                Route Encountered an Issue
               </h2>
               <p className="text-xs text-slate-400 font-medium leading-relaxed">
                 The mobile app caught a runtime exception. You can recover instantly without losing your account.
@@ -89,13 +89,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
                 className="w-full py-3.5 px-4 rounded-2xl bg-emerald-500 hover:bg-emerald-400 active:scale-98 text-slate-950 font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/25 transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 <RotateCcw className="w-4 h-4 stroke-[2.5]" />
-                Restart Motoride App
+                Restart Route App
               </button>
 
               <button
                 type="button"
                 onClick={this.handleClearCacheAndRestart}
-                className="w-full py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-750 active:scale-98 text-slate-300 hover:text-white font-bold text-xs border border-slate-700 transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-2xl bg-slate-800 hover:bg-slate-755 active:scale-98 text-slate-300 hover:text-white font-bold text-xs border border-slate-700 transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 <Home className="w-4 h-4 text-slate-400" />
                 Clear Cache & Reset Screen
@@ -103,7 +103,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
             </div>
 
             <span className="text-[10px] text-slate-500 font-mono">
-              Motoride v1.0.0 • Mobile Crash Shield Active
+              Route v1.0.0 • Mobile Crash Shield Active
             </span>
           </div>
         </div>

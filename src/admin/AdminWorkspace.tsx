@@ -118,9 +118,9 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   const [courierSaveStatus, setCourierSaveStatus] = useState<string | null>(null);
   const [qrSettings, setQrSettings] = useState<QRCodeSetting>({
     qr_image_url:
-      'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=motoride.platform@upi%26pn=Motoride%20Technologies%26cu=INR',
-    upi_id: 'motoride.platform@upi',
-    merchant_name: 'Motoride Technologies Ltd',
+      'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=route.platform@upi%26pn=Route%20Technologies%26cu=INR',
+    upi_id: 'route.platform@upi',
+    merchant_name: 'Route Technologies Ltd',
     note: 'Scan using any UPI app to deposit platform driver commission or top-up driver wallet balance.',
     is_active: true,
     updated_at: new Date().toISOString(),
@@ -767,7 +767,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
         <div>
           <h1 className="text-xl font-black text-white flex items-center gap-2">
             <Shield className="w-5 h-5 text-indigo-400" />
-            <span>Motoride Global Admin Panel</span>
+            <span>Route Global Admin Panel</span>
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
             Real-time management for Passengers, Captains, Rides, Fares, and Appwrite Database
@@ -2268,7 +2268,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
             <p className="text-slate-400 text-[11px] leading-relaxed">
               1. <b>Database ID</b>: Database named <code className="text-pink-300 font-mono">{appwriteDatabaseId}</code> is configured in Appwrite Project <code className="text-pink-300 font-mono">{appwriteProjectId}</code>.
               <br />
-              2. <b>Collections</b>: Motoride uses <code className="text-pink-300 font-mono">profiles</code>, <code className="text-pink-300 font-mono">passengers</code>, <code className="text-pink-300 font-mono">captains</code>, <code className="text-pink-300 font-mono">vehicles</code>, <code className="text-pink-300 font-mono">rides</code>, and <code className="text-pink-300 font-mono">wallets</code>.
+              2. <b>Collections</b>: Route uses <code className="text-pink-300 font-mono">profiles</code>, <code className="text-pink-300 font-mono">passengers</code>, <code className="text-pink-300 font-mono">captains</code>, <code className="text-pink-300 font-mono">vehicles</code>, <code className="text-pink-300 font-mono">rides</code>, and <code className="text-pink-300 font-mono">wallets</code>.
               <br />
               3. <b>Instant Sync</b>: Click the <b>"Push & Sync Profiles to Appwrite"</b> button above at any time to push all accounts directly into Appwrite.
             </p>

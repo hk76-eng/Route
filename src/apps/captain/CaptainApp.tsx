@@ -29,7 +29,7 @@ export function CaptainApp() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    document.title = 'MotoRide — Captain App';
+    document.title = 'Route — Captain App';
   }, []);
 
   const handleAuthenticated = (user: AuthUser) => {
@@ -66,7 +66,7 @@ export function CaptainApp() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col">
         <div className="bg-amber-950/60 border-b border-amber-500/20 px-4 py-2 text-center text-xs text-amber-300 font-medium">
-          🏍️ <strong>MotoRide Captain Application</strong> • Sign in or register as a Captain to receive live rides & couriers
+          🏍️ <strong>Route Captain Application</strong> • Sign in or register as a Captain to receive live rides & couriers
         </div>
         <AuthPage
           onAuthenticated={handleAuthenticated}

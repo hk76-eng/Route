@@ -230,6 +230,22 @@ realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
   }
 });
 
+realtimeSync.on('RIDE_CANCELLED', (payload: any) => {
+  const ride = payload?.ride;
+  const rideId = payload?.ride_id || ride?.id || ride?.$id;
+  const status = ride?.status || 'cancelled_by_captain';
+  if (rideId) {
+    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
+    localRidesStore.set(rideId, {
+      ...existing,
+      ...(ride || {}),
+      id: rideId,
+      status,
+    } as MotorideRide);
+    saveLocalRides();
+  }
+});
+
 realtimeSync.on('RIDE_OFFER_RECEIVED', (payload: any) => {
   const ride = payload?.ride;
   const offer = payload?.offer;
@@ -1191,11 +1207,11 @@ export const motorideApi = {
     const json = await safeFetchJson<{ qr: QRCodeSetting }>(`${API_BASE}/qr-settings`, undefined, {
       qr: {
         id: 'default',
-        upi_id: 'motoride.pay@upi',
-        merchant_name: 'Motoride Payments',
-        note: 'Motoride Ride Fare',
+        upi_id: 'route.pay@upi',
+        merchant_name: 'Route Payments',
+        note: 'Route Ride Fare',
         is_active: true,
-        qr_image_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=motoride.pay@upi',
+        qr_image_url: 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=upi://pay?pa=route.pay@upi',
         updated_at: new Date().toISOString(),
       },
     });

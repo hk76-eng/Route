@@ -72,7 +72,7 @@ export const AppSuiteHeader: React.FC<AppSuiteHeaderProps> = ({
             <div className="flex items-center gap-2.5">
               <img
                 src="/motoride-logo.png"
-                alt="Motoride"
+                alt="Route"
                 referrerPolicy="no-referrer"
                 className="w-9 h-9 rounded-xl object-cover bg-black border border-white/20 shadow-md shadow-black/80 shrink-0"
                 onError={(e) => {
@@ -82,7 +82,7 @@ export const AppSuiteHeader: React.FC<AppSuiteHeaderProps> = ({
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-extrabold tracking-tight text-white text-base">
-                    Motoride
+                    Route
                   </span>
                   <span
                     className={`text-xs font-bold px-2 py-0.5 rounded-lg border ${
@@ -125,7 +125,7 @@ export const AppSuiteHeader: React.FC<AppSuiteHeaderProps> = ({
                 type="button"
                 onClick={() => setShowAppsMenu(!showAppsMenu)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-600 text-xs text-slate-200 transition-colors cursor-pointer"
-                title="View all 3 MotoRide independent applications"
+                title="View all 3 Route independent applications"
               >
                 <Layers className="w-3.5 h-3.5 text-blue-400" />
                 <span className="font-semibold hidden sm:inline">3 Apps Suite</span>

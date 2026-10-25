@@ -27,7 +27,7 @@ export function PassengerApp() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    document.title = 'MotoRide — Passenger App';
+    document.title = 'Route — Passenger App';
   }, []);
 
   const handleAuthenticated = (user: AuthUser) => {
@@ -52,7 +52,7 @@ export function PassengerApp() {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col">
         <div className="bg-emerald-950/60 border-b border-emerald-500/20 px-4 py-2 text-center text-xs text-emerald-300 font-medium">
-          👤 <strong>MotoRide Passenger Application</strong> • Sign in or register as a Passenger to book bike rides and couriers
+          👤 <strong>Route Passenger Application</strong> • Sign in or register as a Passenger to book bike rides and couriers
         </div>
         <AuthPage
           onAuthenticated={handleAuthenticated}

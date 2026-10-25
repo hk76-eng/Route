@@ -176,7 +176,7 @@ export default function App() {
       {/* Bottom Footer with Hyperlink to Admin Dashboard on 'Real Time' (Hidden for specific passenger/captain account sessions) */}
       {currentUser?.role !== 'passenger' && currentUser?.role !== 'captain' && (
         <footer className="relative z-20 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 text-center border-t border-slate-800/80 text-xs text-slate-400 bg-slate-950/90 backdrop-blur-sm">
-          MotoRide Mobility Platform &copy; {new Date().getFullYear()} •{' '}
+          Route Mobility Platform &copy; {new Date().getFullYear()} •{' '}
           <button
             type="button"
             onClick={() => handleRoleChange('admin')}

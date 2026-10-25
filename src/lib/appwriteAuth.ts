@@ -47,7 +47,7 @@ export function generateUUID(): string {
  */
 export async function syncUserToAppwrite(user: AuthUser): Promise<{ success: boolean; error?: string }> {
   const cleanEmail = user.email.toLowerCase().trim();
-  const cleanName = (user.name || '').trim() || 'MotoRide User';
+  const cleanName = (user.name || '').trim() || 'Route User';
   const userId = user.id || generateUUID();
   const avatarToSave = user.avatarUrl || safeStorage.getItem(`motoride_${user.role}_avatar`) || null;
 
@@ -488,7 +488,7 @@ export const appwriteAuth = {
               found = {
                 id: appwriteDoc.$id || appwriteDoc.id || generateUUID(),
                 email: cleanEmail,
-                name: appwriteDoc.full_name || 'MotoRide Passenger',
+                name: appwriteDoc.full_name || 'Route Passenger',
                 role: roleToUse,
                 phone: appwriteDoc.phone || '',
                 avatarUrl: appwriteDoc.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`,
@@ -517,7 +517,7 @@ export const appwriteAuth = {
               found = {
                 id: matchingProf.id || generateUUID(),
                 email: cleanEmail,
-                name: matchingProf.full_name || 'MotoRide Passenger',
+                name: matchingProf.full_name || 'Route Passenger',
                 role: roleToUse,
                 phone: matchingProf.phone || '',
                 avatarUrl: matchingProf.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(cleanEmail)}`,

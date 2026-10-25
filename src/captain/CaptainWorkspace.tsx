@@ -1229,15 +1229,37 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const handleCancelTrip = async () => {
     if (!activeRide) return;
     const rideIdToCancel = activeRide.id;
+    const cancelledRide = {
+      ...activeRide,
+      status: 'cancelled_by_captain' as const,
+      cancellation_reason: 'Captain cancelled the trip',
+      updated_at: new Date().toISOString(),
+    };
     try {
       setActiveRide(null);
+      realtimeSync.broadcast('RIDE_CANCELLED', { ride_id: rideIdToCancel, ride: cancelledRide });
+      realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: cancelledRide, status: 'cancelled_by_captain' });
+      realtimeSync.broadcast('RIDE_UPDATED', cancelledRide);
+
       await motorideApi.updateRideStatus(rideIdToCancel, 'cancelled_by_captain', {
         cancellation_reason: 'Captain cancelled the trip',
+        passenger_id: activeRide.passenger_id,
+        passenger_name: activeRide.passenger_name,
+        pickup_address: activeRide.pickup_address,
+        pickup_lat: activeRide.pickup_lat,
+        pickup_lng: activeRide.pickup_lng,
+        dropoff_address: activeRide.dropoff_address,
+        dropoff_lat: activeRide.dropoff_lat,
+        dropoff_lng: activeRide.dropoff_lng,
+        ride_code: activeRide.ride_code,
       });
       loadCaptainData();
+      loadAvailableRides();
     } catch (err: any) {
       console.warn('Captain cancellation notice:', err);
+      setActiveRide(null);
       loadCaptainData();
+      loadAvailableRides();
     }
   };
 

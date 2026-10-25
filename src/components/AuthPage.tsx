@@ -263,7 +263,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
         <div className="flex items-center gap-3">
           <img
             src="/motoride-logo.png"
-            alt="Motoride"
+            alt="Route"
             referrerPolicy="no-referrer"
             className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl object-cover bg-black border border-white/30 shadow-lg shadow-black/90 shrink-0"
             onError={(e) => {
@@ -273,7 +273,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-black text-lg sm:text-xl tracking-tight text-white">
-                Motoride
+                Route
               </span>
               <span className="text-xs text-white/80 font-semibold hidden sm:inline">
                 – Ride & Courier Booking
@@ -316,10 +316,10 @@ export const AuthPage: React.FC<AuthPageProps> = ({
             target="_blank"
             rel="noopener noreferrer"
             className="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 text-white hover:text-white/80 bg-black border border-white/25 hover:border-white/50"
-            title="Download Motoride Android App"
+            title="Download Route Android App"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Motoride App</span>
+            <span>Route App</span>
           </a>
           </div>
         </div>
@@ -844,7 +844,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
 
       {/* Footer with hyperlink to Admin Dashboard */}
       <footer className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 text-center border-t border-white/20 text-xs text-white/70 bg-black">
-        MotoRide Mobility Platform &copy; {new Date().getFullYear()} •{' '}
+        Route Mobility Platform &copy; {new Date().getFullYear()} •{' '}
         <button
           type="button"
           onClick={() => {
