@@ -2032,77 +2032,9 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
   return (
     <div className="relative w-full h-[calc(100dvh-64px)] sm:h-[calc(100vh-68px)] overflow-hidden bg-slate-950">
-      {/* Authoritative Captain Tab Switcher (Radar, Ride Flow, Earnings, History) */}
-      <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-[1100] w-[95%] sm:w-auto max-w-md pointer-events-auto">
-        <div className="bg-slate-950/90 backdrop-blur-xl border border-white/15 p-1 rounded-2xl shadow-2xl flex items-center justify-between sm:justify-center gap-1">
-          <button
-            type="button"
-            onClick={() => setActiveTab('dispatch')}
-            id="tab-captain-radar"
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
-              activeTab === 'dispatch'
-                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Radio className="w-3.5 h-3.5" />
-            <span>Radar</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('flow')}
-            id="tab-captain-flow"
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none relative active:scale-95 ${
-              activeTab === 'flow'
-                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <Bike className="w-3.5 h-3.5" />
-            <span>Ride Flow</span>
-            {activeRide && (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('earnings')}
-            id="tab-captain-earnings"
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
-              activeTab === 'earnings'
-                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <IndianRupee className="w-3.5 h-3.5" />
-            <span>Earnings</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('history');
-              loadCaptainHistory();
-            }}
-            id="tab-captain-history"
-            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
-              activeTab === 'history'
-                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                : 'text-slate-300 hover:text-white hover:bg-white/10'
-            }`}
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>History</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Main Tab Views */}
-      {activeTab === 'flow' && activeRide ? (
+      {activeRide ? (
         /* Active Ride Split View: Top Half Map (50%), Bottom Half Ride Details (50%) with 50% / 100% Toggle Switch */
-        <div className="absolute inset-0 w-full h-full flex flex-col z-0 pt-12 sm:pt-14">
+        <div className="absolute inset-0 w-full h-full flex flex-col z-0">
           {/* Top Map: 50% height in 50% mode, hidden/0% in 100% details mode */}
           <div
             className={`w-full transition-all duration-300 ease-in-out relative z-0 border-b-2 border-black shrink-0 ${
@@ -2163,54 +2095,12 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             </div>
           </div>
         </div>
-      ) : activeTab === 'flow' && !activeRide ? (
-        <>
-          <div className="absolute inset-0 w-full h-full z-0">
-            {renderCaptainMap(true)}
-          </div>
-          {renderNoActiveRideCard()}
-        </>
-      ) : activeTab === 'earnings' ? (
-        <>
-          <div className="absolute inset-0 w-full h-full z-0 opacity-40 pointer-events-none">
-            {renderCaptainMap(true)}
-          </div>
-          {renderEarningsCard()}
-        </>
-      ) : activeTab === 'history' ? (
-        <>
-          <div className="absolute inset-0 w-full h-full z-0 opacity-40 pointer-events-none">
-            {renderCaptainMap(true)}
-          </div>
-          {renderHistoryCard()}
-        </>
       ) : (
-        /* Dispatch / Radar Tab */
         <>
           {/* Background Street View Map filling 100% of the canvas */}
           <div className="absolute inset-0 w-full h-full z-0">
             {renderCaptainMap(true)}
           </div>
-
-          {/* Quick Return banner if active ride exists while on Radar tab */}
-          {activeRide && (
-            <div className="absolute top-16 sm:top-18 left-1/2 -translate-x-1/2 z-[1050] w-[92%] sm:w-auto max-w-md bg-black/90 backdrop-blur-xl border border-emerald-500/50 rounded-2xl p-2.5 sm:p-3 shadow-2xl flex items-center justify-between gap-3 text-xs text-white animate-in slide-in-from-top duration-200">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                <span className="truncate font-bold">
-                  Active Trip #{activeRide.ride_code} ({activeRide.status.replace(/_/g, ' ')})
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab('flow')}
-                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shrink-0 cursor-pointer shadow-md transition-all active:scale-95 flex items-center gap-1"
-              >
-                <span>Return to Flow</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          )}
 
           {/* Uber-Style Single Ride Request Dispatch Card OR Searching Trips Floating Card */}
           {isOnline && currentDispatchRide ? (

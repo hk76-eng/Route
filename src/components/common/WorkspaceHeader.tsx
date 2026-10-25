@@ -70,42 +70,46 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           {/* Authoritative App Switcher Tabs: Passenger App vs Captain App */}
           <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-2xl shadow-inner">
-            <button
-              type="button"
-              onClick={() => onRoleChange('passenger')}
-              id="tab-header-passenger"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
-                currentRole === 'passenger'
-                  ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-              }`}
-              title="Switch to Passenger App"
-            >
-              <User className="w-3.5 h-3.5" />
-              <span>Passenger</span>
-            </button>
+            {currentUser?.role !== 'captain' && (
+              <button
+                type="button"
+                onClick={() => onRoleChange('passenger')}
+                id="tab-header-passenger"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                  currentRole === 'passenger'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Passenger Dashboard"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Passenger</span>
+              </button>
+            )}
 
-            <button
-              type="button"
-              onClick={() => onRoleChange('captain')}
-              id="tab-header-captain"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
-                currentRole === 'captain'
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-              }`}
-              title="Switch to Captain App"
-            >
-              <div className="w-3.5 h-3.5 rounded bg-black/40 flex items-center justify-center p-0.5 shrink-0">
-                <img
-                  src="/captain-bike-icon.svg"
-                  alt="Captain"
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-contain"
-                />
-              </div>
-              <span>Captain</span>
-            </button>
+            {currentUser?.role !== 'passenger' && (
+              <button
+                type="button"
+                onClick={() => onRoleChange('captain')}
+                id="tab-header-captain"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                  currentRole === 'captain'
+                    ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+                title="Captain Dashboard"
+              >
+                <div className="w-3.5 h-3.5 rounded bg-black/40 flex items-center justify-center p-0.5 shrink-0">
+                  <img
+                    src="/captain-bike-icon.svg"
+                    alt="Captain"
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span>Captain</span>
+              </button>
+            )}
 
             {currentUser?.role === 'admin' && (
               <button

@@ -138,8 +138,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating One-Switch Button for Instant App Switch */}
-      {currentRole !== 'admin' && (
+      {/* Floating One-Switch Button for Instant App Switch (Admin only) */}
+      {currentUser?.role === 'admin' && currentRole !== 'admin' && (
         <aside aria-label="Quick App Switcher" className="fixed bottom-4 right-4 z-40">
           <button
             type="button"
