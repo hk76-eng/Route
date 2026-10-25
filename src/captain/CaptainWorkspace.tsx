@@ -1463,15 +1463,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
           <div className="flex flex-col gap-2 pt-2">
             {activeRide.status === 'captain_accepted' && (
               <>
-                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border-2 border-amber-600/30 text-amber-950 font-black text-xs">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-                    <span>SCREEN LOCKED • ON THE WAY TO PICKUP</span>
-                  </div>
-                  <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Heading to A
-                  </span>
-                </div>
+
                 <p className="text-[11px] text-slate-600 font-semibold px-1">
                   Drive to Location A. When you reach the passenger pickup spot, tap below:
                 </p>
@@ -1488,15 +1480,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
             {activeRide.status === 'captain_arrived' && (
               <>
-                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-emerald-500/15 border-2 border-emerald-600/40 text-emerald-950 font-black text-xs">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-emerald-800 shrink-0" />
-                    <span>SCREEN LOCKED • WAITING FOR PASSENGER</span>
-                  </div>
-                  <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    At Pickup
-                  </span>
-                </div>
+
                 <div className="p-3 rounded-2xl bg-slate-100 border border-slate-300 flex items-center justify-between text-xs">
                   <span className="text-slate-800 font-bold">Ask Passenger for Start OTP:</span>
                   <span className="font-mono-num font-black text-sm bg-black text-emerald-400 px-3 py-1 rounded-lg">
@@ -1516,15 +1500,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
             {activeRide.status === 'trip_started' && (
               <>
-                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-slate-950 text-white font-black text-xs border border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>SCREEN LOCKED • TRIP IN PROGRESS</span>
-                  </div>
-                  <span className="text-[10px] bg-emerald-500 text-slate-950 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Driving to B
-                  </span>
-                </div>
+
                 <button
                   type="button"
                   onClick={() => handleStatusChange('trip_completed')}

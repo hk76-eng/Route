@@ -1540,16 +1540,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
             {/* Case 1: Searching Nearby Captains Radar - White Background with Black Text and Icons */}
             {(activeRide.status === 'requested' || activeRide.status === 'captain_offered') && (
               <div className="flex flex-col items-center justify-center py-4 text-center text-black">
-                {/* Screen Locked Indicator while waiting for Captain action */}
-                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border-2 border-amber-600/30 text-amber-950 font-black text-xs mb-3">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-                    <span>SCREEN LOCKED • WAITING FOR CAPTAIN ACTION</span>
-                  </div>
-                  <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Locked
-                  </span>
-                </div>
+
 
                 <div className="relative flex items-center justify-center w-28 h-28 my-2">
                   <div className="absolute inset-0 rounded-full bg-slate-200/80 animate-ping border border-black/10" />
@@ -1754,16 +1745,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               activeRide.status === 'captain_arrived' ||
               activeRide.status === 'trip_started') && (
               <div className="flex flex-col gap-4 text-black">
-                {/* Screen Locked Indicator while waiting for captain or trip actions */}
-                <div className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border-2 border-amber-600/30 text-amber-950 font-black text-xs">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-amber-700 shrink-0" />
-                    <span>SCREEN LOCKED • WAITING FOR RIDE ACTION</span>
-                  </div>
-                  <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                    Locked
-                  </span>
-                </div>
+
 
                 {/* Digital Watch on Top of Ride Details (Shown ONLY when captain is on the way to pickup) */}
                 {activeRide.status === 'captain_accepted' && (
