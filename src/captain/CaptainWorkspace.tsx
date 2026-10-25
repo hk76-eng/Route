@@ -1559,16 +1559,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
           </div>
 
           <div className="p-4 sm:p-5 flex flex-col gap-3.5">
-            {/* Action Required Banner: Waits for manual action, does not auto-advance */}
-            <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-bold">
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>NEW RIDE REQUEST • ACTION REQUIRED</span>
-              </div>
-              <span className="text-[10px] uppercase font-black bg-amber-500 text-slate-950 px-2 py-0.5 rounded-md">
-                Manual Action
-              </span>
-            </div>
+
 
             {/* Top Bar: Uber Service Tag + Queue Info + SVG Circular Countdown Dial */}
             <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
