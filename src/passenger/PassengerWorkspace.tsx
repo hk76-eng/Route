@@ -87,10 +87,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 }) => {
   const authUser = currentUser || supabaseAuth.getCurrentUser();
   const effectivePassengerName = currentUser?.name || (passengerName !== 'Passenger' ? passengerName : undefined) || authUser?.name || passengerName || 'Passenger';
-  // Active Ride State
+  // Active Ride State & Authoritative Tab Navigation (Uber/inDrive style)
+  type PassengerTab = 'book' | 'flow' | 'history' | 'wallet';
   const [activeRide, setActiveRide] = useState<MotorideRide | null>(null);
   const [rideHistory, setRideHistory] = useState<MotorideRide[]>([]);
-  const [activeTab, setActiveTab] = useState<'book' | 'history'>('book');
+  const [activeTab, setActiveTab] = useState<PassengerTab>('book');
   const [viewMode, setViewMode] = useState<'background' | 'split'>('background');
   const [isCardMinimized, setIsCardMinimized] = useState<boolean>(false);
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
@@ -1191,6 +1192,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       });
       cancelledRideIdsRef.current.delete(newRide.id);
       setActiveRide(newRide);
+      setActiveTab('flow');
+      setIsCardMinimized(false);
       loadRideHistory();
 
       // Immediately link current live GPS coordinates to the new ride in Supabase
@@ -1454,11 +1457,9 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanName)}&background=0284c7&color=fff&bold=true`;
   };
 
-  const renderControlPanel = () => (
-    <div className="flex flex-col gap-4">
-      {activeRide ? (
-          /* Active Ride Cards - White Background with Black Text, Icons and Dark Black Outlines */
-          <div className="bg-white border-2 border-black rounded-3xl p-5 flex flex-col gap-4 shadow-2xl text-black">
+  const renderActiveRideCard = () => (
+    /* Active Ride Cards - White Background with Black Text, Icons and Dark Black Outlines */
+    <div className="bg-white border-2 border-black rounded-3xl p-5 flex flex-col gap-4 shadow-2xl text-black">
             {/* Top Pull Down / Drop Down Handle Bar */}
             <div
               onClick={() => setIsCardMinimized(true)}
@@ -1995,9 +1996,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               </div>
             )}
           </div>
-        ) : (
-          /* Standard Ride Booking Form - White Theme with Black Text, Icons and Dark Black Outlines */
-          <div className="bg-white border-2 border-black rounded-3xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-2xl text-black">
+  );
+
+  const renderBookingCard = () => (
+    /* Standard Ride Booking Form - White Theme with Black Text, Icons and Dark Black Outlines */
+    <div className="bg-white border-2 border-black rounded-3xl p-4 sm:p-5 flex flex-col gap-3.5 shadow-2xl text-black">
             {/* Header with Motoride Booking Title and Dropdown Collapse Button */}
             <div className="flex items-center justify-between pb-2 border-b border-black/20">
               <div className="flex items-center gap-2">
@@ -2585,7 +2588,287 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               </span>
             </button>
           </div>
+  );
+
+  const renderHistoryCard = () => (
+    <div className="bg-white border-2 border-black rounded-3xl p-5 flex flex-col gap-4 shadow-2xl text-black">
+      <div className="flex items-center justify-between pb-3 border-b border-black/20">
+        <div className="flex items-center gap-2">
+          <History className="w-5 h-5 text-black stroke-[2.5]" />
+          <h2 className="text-base font-black text-black">Ride & Activity History</h2>
+        </div>
+        <button
+          type="button"
+          onClick={loadRideHistory}
+          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-black border border-black text-xs font-bold transition-all cursor-pointer"
+          title="Refresh ride history"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {rideHistory.length === 0 ? (
+        <div className="py-8 flex flex-col items-center justify-center text-center gap-2">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-black/20 flex items-center justify-center text-slate-400">
+            <History className="w-6 h-6 stroke-[2]" />
+          </div>
+          <p className="text-xs font-bold text-slate-700">No trips found yet</p>
+          <p className="text-[11px] text-slate-500 max-w-xs">
+            Your completed rides and courier deliveries will appear here with invoices.
+          </p>
+          <button
+            type="button"
+            onClick={() => setActiveTab('book')}
+            className="mt-2 px-4 py-2 rounded-xl bg-black text-white text-xs font-black cursor-pointer shadow hover:bg-slate-800"
+          >
+            Book Your First Ride
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+          {rideHistory.map((r) => (
+            <div
+              key={r.id}
+              className="p-3.5 rounded-2xl bg-slate-50 border border-black flex flex-col gap-2 hover:bg-slate-100 transition-colors shadow-xs"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-mono-num font-black text-slate-700">
+                  #{r.ride_code || r.id.slice(0, 8)}
+                </span>
+                <span
+                  className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                    r.status === 'trip_completed' || r.status === 'completed'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                      : r.status.includes('cancelled')
+                      ? 'bg-rose-100 text-rose-900 border-rose-300'
+                      : 'bg-amber-100 text-amber-900 border-amber-400'
+                  }`}
+                >
+                  {r.status.replace(/_/g, ' ')}
+                </span>
+              </div>
+
+              <div className="text-xs space-y-1">
+                <div className="flex items-start gap-1.5 font-medium text-slate-800">
+                  <span className="text-emerald-700 font-bold shrink-0">A:</span>
+                  <span className="truncate">{r.pickup_address}</span>
+                </div>
+                <div className="flex items-start gap-1.5 font-medium text-slate-800">
+                  <span className="text-rose-700 font-bold shrink-0">B:</span>
+                  <span className="truncate">{r.dropoff_address}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2 border-t border-black/10 text-xs">
+                <span className="font-mono-num font-black text-black text-sm">
+                  ₹{r.final_fare || r.offered_fare}
+                </span>
+                <span className="text-[11px] text-slate-500 font-semibold capitalize">
+                  {r.ride_type} • {r.payment_method?.toUpperCase()}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderWalletCard = () => (
+    <div className="bg-white border-2 border-black rounded-3xl p-5 flex flex-col gap-4 shadow-2xl text-black">
+      <div className="flex items-center justify-between pb-3 border-b border-black/20">
+        <div className="flex items-center gap-2">
+          <IndianRupee className="w-5 h-5 text-black stroke-[2.5]" />
+          <h2 className="text-base font-black text-black">Passenger Wallet</h2>
+        </div>
+        <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-400 font-black">
+          Active Account
+        </span>
+      </div>
+
+      <div className="p-4 rounded-2xl bg-black text-white flex items-center justify-between shadow-md">
+        <div>
+          <span className="text-[10px] text-white/70 uppercase font-black block">Available Balance</span>
+          <span className="text-2xl font-black font-mono-num text-emerald-400">
+            ₹{currentUser?.walletBalance !== undefined ? currentUser.walletBalance : 200}
+          </span>
+        </div>
+        {onOpenWallet && (
+          <button
+            type="button"
+            onClick={onOpenWallet}
+            className="px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-black font-black text-xs transition-all cursor-pointer shadow active:scale-95"
+          >
+            Add Money (QR)
+          </button>
         )}
+      </div>
+
+      <div className="p-3 rounded-2xl bg-slate-50 border border-black/20 flex flex-col gap-1 text-xs text-slate-700">
+        <span className="font-black text-black">Transparent Pricing</span>
+        <p className="text-[11px] leading-relaxed">
+          Ride fares are estimated by distance and duration. You can also offer your custom price for bike rides and courier packages.
+        </p>
+      </div>
+    </div>
+  );
+
+  const renderControlPanel = () => (
+    <div className="flex flex-col gap-2.5">
+      {/* Ride Flow Authoritative Tab Navigation (Uber & inDrive Style) */}
+      <div
+        className="bg-black p-1 rounded-2xl border-2 border-black flex items-center justify-between gap-1 shadow-2xl text-xs font-bold"
+        role="tablist"
+        aria-label="Ride Flow Navigation Tabs"
+      >
+        <button
+          type="button"
+          role="tab"
+          id="passenger-tab-book"
+          aria-selected={activeTab === 'book'}
+          onClick={() => {
+            setActiveTab('book');
+            setIsCardMinimized(false);
+          }}
+          className={`flex-1 py-2 px-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 select-none active:scale-95 ${
+            activeTab === 'book'
+              ? 'bg-white text-black shadow-md font-black'
+              : 'text-slate-300 hover:text-white hover:bg-white/10'
+          }`}
+          title="Book a Ride or Courier"
+        >
+          <Bike className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>Book</span>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          id="passenger-tab-flow"
+          aria-selected={activeTab === 'flow'}
+          onClick={() => {
+            setActiveTab('flow');
+            setIsCardMinimized(false);
+          }}
+          className={`flex-1 py-2 px-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 relative select-none active:scale-95 ${
+            activeTab === 'flow'
+              ? 'bg-white text-black shadow-md font-black'
+              : 'text-slate-300 hover:text-white hover:bg-white/10'
+          }`}
+          title="Live Ride Flow & Status"
+        >
+          <Radio className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>Ride Flow</span>
+          {activeRide && (
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block shrink-0" />
+          )}
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          id="passenger-tab-history"
+          aria-selected={activeTab === 'history'}
+          onClick={() => {
+            setActiveTab('history');
+            setIsCardMinimized(false);
+            loadRideHistory();
+          }}
+          className={`flex-1 py-2 px-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 select-none active:scale-95 ${
+            activeTab === 'history'
+              ? 'bg-white text-black shadow-md font-black'
+              : 'text-slate-300 hover:text-white hover:bg-white/10'
+          }`}
+          title="Past Trips & Invoices"
+        >
+          <History className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>History</span>
+          {rideHistory.length > 0 && (
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                activeTab === 'history' ? 'bg-black text-white' : 'bg-slate-800 text-slate-200'
+              }`}
+            >
+              {rideHistory.length}
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          id="passenger-tab-wallet"
+          aria-selected={activeTab === 'wallet'}
+          onClick={() => {
+            setActiveTab('wallet');
+            setIsCardMinimized(false);
+          }}
+          className={`flex-1 py-2 px-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 select-none active:scale-95 ${
+            activeTab === 'wallet'
+              ? 'bg-white text-black shadow-md font-black'
+              : 'text-slate-300 hover:text-white hover:bg-white/10'
+          }`}
+          title="Passenger Wallet & QR Top-up"
+        >
+          <IndianRupee className="w-3.5 h-3.5 stroke-[2.5]" />
+          <span>Wallet</span>
+        </button>
+      </div>
+
+      {/* TAB CONTENT 1: BOOK RIDE */}
+      {activeTab === 'book' && (
+        <div className="flex flex-col gap-2.5">
+          {activeRide && (
+            <div
+              onClick={() => setActiveTab('flow')}
+              className="p-3 rounded-2xl bg-amber-50 border-2 border-amber-500/50 flex items-center justify-between text-xs font-bold text-amber-950 cursor-pointer shadow-sm hover:bg-amber-100 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Active Ride #{activeRide.ride_code} is in progress</span>
+              </div>
+              <span className="text-amber-800 underline flex items-center gap-1">
+                View Ride Flow <ChevronRight className="w-3.5 h-3.5" />
+              </span>
+            </div>
+          )}
+          {renderBookingCard()}
+        </div>
+      )}
+
+      {/* TAB CONTENT 2: RIDE FLOW (ACTIVE TRIP / RADAR) */}
+      {activeTab === 'flow' && (
+        <div className="flex flex-col gap-2.5">
+          {activeRide ? (
+            renderActiveRideCard()
+          ) : (
+            <div className="bg-white border-2 border-black rounded-3xl p-6 flex flex-col items-center justify-center gap-4 text-center text-black shadow-2xl">
+              <div className="w-16 h-16 rounded-3xl bg-slate-100 border border-black flex items-center justify-center">
+                <Radio className="w-8 h-8 text-black" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-black">No Active Ride in Progress</h3>
+                <p className="text-xs text-slate-600 mt-1 max-w-xs">
+                  You don't have any active trip right now. You can book a motorbike ride or parcel delivery anytime.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('book')}
+                className="py-3 px-6 rounded-2xl bg-black hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider transition-all active:scale-95 cursor-pointer shadow-lg"
+              >
+                Book a Ride Now
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB CONTENT 3: TRIP HISTORY */}
+      {activeTab === 'history' && renderHistoryCard()}
+
+      {/* TAB CONTENT 4: WALLET */}
+      {activeTab === 'wallet' && renderWalletCard()}
     </div>
   );
 
@@ -2653,7 +2936,10 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
         /* Minimized Floating Bar (Drop Down Condition) */
         <div className="fixed sm:absolute bottom-3 sm:bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 md:left-6 md:translate-x-0 z-[1000] w-[calc(100%-1.25rem)] sm:w-[460px] md:w-[420px] animate-in fade-in slide-in-from-bottom-3 duration-200">
           <div
-            onClick={() => setIsCardMinimized(false)}
+            onClick={() => {
+              setIsCardMinimized(false);
+              setActiveTab(activeRide ? 'flow' : 'book');
+            }}
             className="p-3 sm:p-3.5 rounded-3xl bg-slate-950 border border-slate-800 shadow-2xl flex items-center justify-between gap-3 hover:border-slate-700 transition-all cursor-pointer"
           >
             <div className="flex items-center gap-3 min-w-0 pr-2 flex-1">
@@ -2699,6 +2985,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               onClick={(e) => {
                 e.stopPropagation();
                 setIsCardMinimized(false);
+                setActiveTab(activeRide ? 'flow' : 'book');
               }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer transition-all shrink-0"
               title={activeRide ? 'Expand Active Ride Details' : 'Open booking form'}

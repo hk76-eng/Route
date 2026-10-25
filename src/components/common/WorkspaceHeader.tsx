@@ -68,74 +68,62 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
 
         {/* Center/Right Section: One-Click Switch Button for Passenger App and Captain App modes */}
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          {/* Master One-Switch Button */}
-          <div className="flex items-center gap-2">
-            {currentUser?.role === 'admin' ? (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-purple-500/15 border border-purple-500/40 text-purple-300">
-                <Shield className="w-3.5 h-3.5 text-purple-400" />
-                <span>Admin Dashboard Account</span>
+          {/* Authoritative App Switcher Tabs: Passenger App vs Captain App */}
+          <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-2xl shadow-inner">
+            <button
+              type="button"
+              onClick={() => onRoleChange('passenger')}
+              id="tab-header-passenger"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                currentRole === 'passenger'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+              title="Switch to Passenger App"
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Passenger</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onRoleChange('captain')}
+              id="tab-header-captain"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                currentRole === 'captain'
+                  ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+              }`}
+              title="Switch to Captain App"
+            >
+              <div className="w-3.5 h-3.5 rounded bg-black/40 flex items-center justify-center p-0.5 shrink-0">
+                <img
+                  src="/captain-bike-icon.svg"
+                  alt="Captain"
+                  referrerPolicy="no-referrer"
+                  className="w-full h-full object-contain"
+                />
               </div>
-            ) : currentUser?.role === 'passenger' ? (
-              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300">
-                <User className="w-4 h-4 text-emerald-400" />
-                <span>Passenger App Account</span>
-              </div>
-            ) : currentUser?.role === 'captain' ? (
-              <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300">
-                <div className="w-4 h-4 rounded bg-black/40 border border-white/20 flex items-center justify-center p-0.5 shrink-0">
-                  <img
-                    src="/captain-bike-icon.svg"
-                    alt="Captain"
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-                <span>Captain App Account</span>
-              </div>
-            ) : (
+              <span>Captain</span>
+            </button>
+
+            {currentUser?.role === 'admin' && (
               <button
                 type="button"
-                onClick={handleToggleApp}
-                id="app-one-switch-btn"
-                className={`group relative flex items-center gap-2 px-4 py-2.5 rounded-2xl border-2 transition-all duration-300 shadow-2xl cursor-pointer select-none active:scale-95 z-50 ${
-                  currentRole === 'passenger'
-                    ? 'bg-slate-900 border-emerald-400 text-emerald-300 hover:border-emerald-300 hover:bg-slate-800'
-                    : 'bg-slate-900 border-amber-400 text-amber-300 hover:border-amber-300 hover:bg-slate-800'
+                onClick={() => onRoleChange('admin')}
+                id="tab-header-admin"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                  currentRole === 'admin'
+                    ? 'bg-purple-600 text-white shadow-md font-black'
+                    : 'text-purple-300 hover:text-white hover:bg-purple-950/40'
                 }`}
-                title={currentRole === 'passenger' ? 'Switch to Captain App' : 'Switch to Passenger App'}
+                title="Switch to Admin Dashboard"
               >
-                {currentRole === 'passenger' ? (
-                  <>
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                      <User className="w-4 h-4" />
-                      <span>Passenger App</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 pl-2.5 border-l border-white/25 text-xs font-semibold text-slate-200 group-hover:text-white">
-                      <span>Switch to Captain</span>
-                      <ArrowLeftRight className="w-4 h-4 text-amber-400 group-hover:rotate-180 transition-transform duration-300" />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                      <div className="w-4 h-4 rounded bg-black/40 border border-white/20 flex items-center justify-center p-0.5 shrink-0">
-                        <img
-                          src="/captain-bike-icon.svg"
-                          alt="Captain"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-contain"
-                        />
-                      </div>
-                      <span>Captain App</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 pl-2.5 border-l border-white/25 text-xs font-semibold text-slate-200 group-hover:text-white">
-                      <span>Switch to Passenger</span>
-                      <ArrowLeftRight className="w-4 h-4 text-emerald-400 group-hover:rotate-180 transition-transform duration-300" />
-                    </div>
-                  </>
-                )}
+                <Shield className="w-3.5 h-3.5" />
+                <span>Admin</span>
               </button>
             )}
+          </div>
 
 
             {/* Captain Online/Offline Pill (Visible when Captain App is Active) */}
@@ -158,7 +146,6 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
                 <span>{isCaptainOnline ? 'Online' : 'Offline'}</span>
               </button>
             )}
-          </div>
 
           {/* User Account Info & Sign Out */}
           {currentUser && (

@@ -45,6 +45,7 @@ import {
   Volume2,
   Zap,
   Lock,
+  Wallet,
 } from 'lucide-react';
 import { MotorideRideHistoryModal } from '../components/MotorideRideHistoryModal';
 
@@ -172,6 +173,30 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const [showPassengerRatingModal, setShowPassengerRatingModal] = useState<boolean>(false);
   const [completedRideForRating, setCompletedRideForRating] = useState<MotorideRide | null>(null);
   const [isFinishingRide, setIsFinishingRide] = useState<boolean>(false);
+  type CaptainTab = 'dispatch' | 'flow' | 'earnings' | 'history';
+  const [activeTab, setActiveTab] = useState<CaptainTab>('dispatch');
+  const [captainHistoryRides, setCaptainHistoryRides] = useState<MotorideRide[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
+
+  const loadCaptainHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const list = await motorideApi.getRides({ captain_id: captainId });
+      if (Array.isArray(list)) {
+        setCaptainHistoryRides(
+          list.filter(
+            (r) =>
+              r &&
+              (r.status === 'completed' ||
+                r.status === 'trip_completed' ||
+                r.status.includes('cancelled'))
+          )
+        );
+      }
+    } catch {} finally {
+      setIsLoadingHistory(false);
+    }
+  };
 
   // Default to false so the map and Captain live GPS position are immediately 100% visible
   const [is100Full, setIs100Full] = useState<boolean>(false);
@@ -721,6 +746,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       } catch (incomeErr) {
         console.warn('Today income fetch notice:', incomeErr);
       }
+      loadCaptainHistory();
     } catch {}
   };
 
@@ -885,6 +911,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         ride
       );
       setActiveRide(updated);
+      setActiveTab('flow');
       setInspectedRide(null);
       setAvailableRides((prev) => prev.filter((r) => r.id !== ride.id));
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
@@ -1795,11 +1822,287 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     );
   };
 
+  const renderEarningsCard = () => (
+    <div className="absolute inset-0 z-20 flex items-center justify-center p-3 sm:p-6 overflow-y-auto pointer-events-auto bg-slate-950/60 backdrop-blur-sm">
+      <div className="w-full max-w-lg bg-white border-2 border-black rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-2xl text-black my-auto animate-in fade-in duration-150">
+        <div className="flex items-center justify-between pb-3 border-b border-black/20">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black">
+              <IndianRupee className="w-5 h-5 stroke-[2.5]" />
+            </div>
+            <div>
+              <h2 className="text-base font-black text-black">Captain Earnings & Wallet</h2>
+              <p className="text-[11px] text-slate-600 font-semibold">Today's net payout & balance</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={loadCaptainData}
+            className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-black border border-black text-xs font-bold transition-all cursor-pointer"
+            title="Refresh earnings"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-4 rounded-2xl bg-amber-500 text-slate-950 border border-amber-600 flex flex-col gap-1 shadow-sm">
+            <span className="text-[11px] uppercase tracking-wider font-extrabold text-amber-950">Today's Income</span>
+            <span className="text-2xl sm:text-3xl font-black font-mono-num">₹{todayIncome}</span>
+            <span className="text-[10px] text-amber-900 font-bold">{todayCompletedRidesCount} trips completed today</span>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-950 text-white border border-black flex flex-col gap-1 shadow-sm">
+            <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">Wallet Balance</span>
+            <span className="text-2xl sm:text-3xl font-black font-mono-num text-emerald-400">₹{walletBalance}</span>
+            <span className="text-[10px] text-slate-400 font-bold">10% Platform fee deducted</span>
+          </div>
+        </div>
+
+        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-amber-600" />
+            <span className="font-bold text-slate-800">Platform Commission Rate:</span>
+          </div>
+          <span className="font-black text-slate-950">10% (You keep 90%)</span>
+        </div>
+
+        {onOpenWallet && (
+          <button
+            type="button"
+            onClick={onOpenWallet}
+            className="w-full py-3 rounded-2xl bg-black hover:bg-slate-800 text-white font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow-lg transition-all active:scale-[0.98] border border-black"
+          >
+            <Wallet className="w-4 h-4" />
+            <span>Manage Wallet, Top-Up & Withdrawals</span>
+          </button>
+        )}
+
+        <div className="flex flex-col gap-2 pt-2 border-t border-black/10">
+          <span className="text-xs font-black text-black">Recent Wallet Transactions</span>
+          {walletTransactions.length === 0 ? (
+            <p className="text-xs text-slate-500 py-3 text-center">No recent wallet transactions</p>
+          ) : (
+            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+              {walletTransactions.slice(0, 8).map((tx) => (
+                <div key={tx.id} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-900 block capitalize">{tx.description || tx.type}</span>
+                    <span className="text-[10px] text-slate-500 font-mono-num">{new Date(tx.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <span className={`font-black font-mono-num ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {tx.type === 'credit' ? '+' : '-'}₹{tx.amount}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderHistoryCard = () => (
+    <div className="absolute inset-0 z-20 flex items-center justify-center p-3 sm:p-6 overflow-y-auto pointer-events-auto bg-slate-950/60 backdrop-blur-sm">
+      <div className="w-full max-w-lg bg-white border-2 border-black rounded-3xl p-5 sm:p-6 flex flex-col gap-4 shadow-2xl text-black my-auto animate-in fade-in duration-150">
+        <div className="flex items-center justify-between pb-3 border-b border-black/20">
+          <div className="flex items-center gap-2">
+            <History className="w-5 h-5 text-black stroke-[2.5]" />
+            <div>
+              <h2 className="text-base font-black text-black">Captain Trip History</h2>
+              <p className="text-[11px] text-slate-600 font-semibold">Completed and past rides</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={loadCaptainHistory}
+              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-black border border-black text-xs font-bold transition-all cursor-pointer"
+              title="Refresh history"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsRideHistoryOpen(true)}
+              className="px-3 py-1.5 rounded-xl bg-black hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+            >
+              Full Modal
+            </button>
+          </div>
+        </div>
+
+        {isLoadingHistory ? (
+          <div className="py-8 flex flex-col items-center justify-center text-center gap-2">
+            <span className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs font-bold text-slate-700">Loading trips...</span>
+          </div>
+        ) : captainHistoryRides.length === 0 ? (
+          <div className="py-8 flex flex-col items-center justify-center text-center gap-2">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-black/20 flex items-center justify-center text-slate-400">
+              <History className="w-6 h-6 stroke-[2]" />
+            </div>
+            <p className="text-xs font-bold text-slate-700">No trips recorded yet</p>
+            <p className="text-[11px] text-slate-500 max-w-xs">
+              Completed trips and earned fares will appear here with passenger details.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('dispatch')}
+              className="mt-2 px-4 py-2 rounded-xl bg-black text-white text-xs font-black cursor-pointer shadow hover:bg-slate-800"
+            >
+              Go to Radar
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+            {captainHistoryRides.map((r) => (
+              <div key={r.id} className="p-3.5 rounded-2xl bg-slate-50 border border-black flex flex-col gap-2 hover:bg-slate-100 transition-colors shadow-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-mono-num font-black text-slate-700">
+                    #{r.ride_code || r.id.slice(0, 8)}
+                  </span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                    r.status === 'trip_completed' || r.status === 'completed'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                      : 'bg-rose-100 text-rose-900 border-rose-300'
+                  }`}>
+                    {r.status.replace(/_/g, ' ')}
+                  </span>
+                </div>
+                <div className="text-xs space-y-1">
+                  <div className="flex items-start gap-1.5 font-medium text-slate-800">
+                    <span className="text-emerald-700 font-bold shrink-0">A:</span>
+                    <span className="truncate">{r.pickup_address}</span>
+                  </div>
+                  <div className="flex items-start gap-1.5 font-medium text-slate-800">
+                    <span className="text-rose-700 font-bold shrink-0">B:</span>
+                    <span className="truncate">{r.dropoff_address}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t border-black/10 text-xs">
+                  <span className="font-mono-num font-black text-black text-sm">
+                    ₹{r.final_fare || r.offered_fare}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold">
+                    Passenger: {r.passenger_name || 'Passenger'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderNoActiveRideCard = () => (
+    <div className="absolute inset-0 z-20 flex items-center justify-center p-4 pointer-events-auto bg-slate-950/60 backdrop-blur-sm">
+      <div className="w-full max-w-md bg-white border-2 border-black rounded-3xl p-6 flex flex-col items-center text-center gap-3 shadow-2xl text-black animate-in fade-in duration-150">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center shadow-md">
+          <Bike className="w-8 h-8 stroke-[2.5]" />
+        </div>
+        <h3 className="text-base font-black text-black">No Active Trip in Progress</h3>
+        <p className="text-xs text-slate-600 font-medium max-w-xs">
+          Turn-by-turn navigation, OTP verification, and passenger details appear here when you accept a ride.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-center gap-2 w-full mt-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('dispatch')}
+            className="w-full py-3 rounded-2xl bg-black hover:bg-slate-800 text-white font-black text-xs flex items-center justify-center gap-2 cursor-pointer shadow transition-all active:scale-[0.98] border border-black"
+          >
+            <Radio className="w-4 h-4" />
+            <span>Go to Radar (Find Trips)</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleSimulateIncomingRide}
+            className="w-full sm:w-auto py-3 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-black font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer border border-black transition-all active:scale-[0.98] shrink-0"
+            title="Simulate incoming passenger request"
+          >
+            <Zap className="w-4 h-4 text-amber-600" />
+            <span>Test Ride</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="relative w-full h-[calc(100dvh-64px)] sm:h-[calc(100vh-68px)] overflow-hidden bg-slate-950">
-      {activeRide ? (
+      {/* Authoritative Captain Tab Switcher (Radar, Ride Flow, Earnings, History) */}
+      <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-[1100] w-[95%] sm:w-auto max-w-md pointer-events-auto">
+        <div className="bg-slate-950/90 backdrop-blur-xl border border-white/15 p-1 rounded-2xl shadow-2xl flex items-center justify-between sm:justify-center gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('dispatch')}
+            id="tab-captain-radar"
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+              activeTab === 'dispatch'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>Radar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('flow')}
+            id="tab-captain-flow"
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none relative active:scale-95 ${
+              activeTab === 'flow'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <Bike className="w-3.5 h-3.5" />
+            <span>Ride Flow</span>
+            {activeRide && (
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('earnings')}
+            id="tab-captain-earnings"
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+              activeTab === 'earnings'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <IndianRupee className="w-3.5 h-3.5" />
+            <span>Earnings</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('history');
+              loadCaptainHistory();
+            }}
+            id="tab-captain-history"
+            className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer select-none active:scale-95 ${
+              activeTab === 'history'
+                ? 'bg-amber-500 text-slate-950 shadow-md font-black'
+                : 'text-slate-300 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>History</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Tab Views */}
+      {activeTab === 'flow' && activeRide ? (
         /* Active Ride Split View: Top Half Map (50%), Bottom Half Ride Details (50%) with 50% / 100% Toggle Switch */
-        <div className="absolute inset-0 w-full h-full flex flex-col z-0">
+        <div className="absolute inset-0 w-full h-full flex flex-col z-0 pt-12 sm:pt-14">
           {/* Top Map: 50% height in 50% mode, hidden/0% in 100% details mode */}
           <div
             className={`w-full transition-all duration-300 ease-in-out relative z-0 border-b-2 border-black shrink-0 ${
@@ -1860,12 +2163,54 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             </div>
           </div>
         </div>
+      ) : activeTab === 'flow' && !activeRide ? (
+        <>
+          <div className="absolute inset-0 w-full h-full z-0">
+            {renderCaptainMap(true)}
+          </div>
+          {renderNoActiveRideCard()}
+        </>
+      ) : activeTab === 'earnings' ? (
+        <>
+          <div className="absolute inset-0 w-full h-full z-0 opacity-40 pointer-events-none">
+            {renderCaptainMap(true)}
+          </div>
+          {renderEarningsCard()}
+        </>
+      ) : activeTab === 'history' ? (
+        <>
+          <div className="absolute inset-0 w-full h-full z-0 opacity-40 pointer-events-none">
+            {renderCaptainMap(true)}
+          </div>
+          {renderHistoryCard()}
+        </>
       ) : (
+        /* Dispatch / Radar Tab */
         <>
           {/* Background Street View Map filling 100% of the canvas */}
           <div className="absolute inset-0 w-full h-full z-0">
             {renderCaptainMap(true)}
           </div>
+
+          {/* Quick Return banner if active ride exists while on Radar tab */}
+          {activeRide && (
+            <div className="absolute top-16 sm:top-18 left-1/2 -translate-x-1/2 z-[1050] w-[92%] sm:w-auto max-w-md bg-black/90 backdrop-blur-xl border border-emerald-500/50 rounded-2xl p-2.5 sm:p-3 shadow-2xl flex items-center justify-between gap-3 text-xs text-white animate-in slide-in-from-top duration-200">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="truncate font-bold">
+                  Active Trip #{activeRide.ride_code} ({activeRide.status.replace(/_/g, ' ')})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('flow')}
+                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shrink-0 cursor-pointer shadow-md transition-all active:scale-95 flex items-center gap-1"
+              >
+                <span>Return to Flow</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Uber-Style Single Ride Request Dispatch Card OR Searching Trips Floating Card */}
           {isOnline && currentDispatchRide ? (

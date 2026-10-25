@@ -39,18 +39,18 @@ export default function App() {
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [showTestingGuide, setShowTestingGuide] = useState<boolean>(true);
 
-  // Keep active role synced in safe storage and locked to user role if authenticated
+  // Keep active role synced in safe storage without reverting user selection
   useEffect(() => {
-    if (currentUser?.role && currentUser.role !== 'admin') {
-      setCurrentRole(currentUser.role);
-    }
     safeStorage.setItem('motoride_active_role', currentRole);
-  }, [currentRole, currentUser]);
+  }, [currentRole]);
 
   // Handle Authentication Completion
   const handleAuthenticated = (user: AuthUser) => {
     setCurrentUser(user);
-    setCurrentRole(user.role);
+    if (user.role) {
+      setCurrentRole(user.role);
+      safeStorage.setItem('motoride_active_role', user.role);
+    }
     if (user.walletBalance !== undefined) {
       setWalletBalance(user.walletBalance);
     }
@@ -64,6 +64,7 @@ export default function App() {
 
   const handleRoleChange = (role: UserRole) => {
     setCurrentRole(role);
+    safeStorage.setItem('motoride_active_role', role);
   };
 
   const handleToggleCaptainOnline = async () => {
@@ -137,8 +138,8 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating One-Switch Button for Instant App Switch (Hidden for specific passenger/captain account sessions) */}
-      {currentRole !== 'admin' && currentUser?.role !== 'passenger' && currentUser?.role !== 'captain' && (
+      {/* Floating One-Switch Button for Instant App Switch */}
+      {currentRole !== 'admin' && (
         <aside aria-label="Quick App Switcher" className="fixed bottom-4 right-4 z-40">
           <button
             type="button"

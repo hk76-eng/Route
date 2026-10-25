@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   AdminDashboardStats,
   Captain,
@@ -284,6 +284,11 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
   useEffect(() => {
     loadAllData();
 
@@ -321,7 +326,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
       window.removeEventListener('focus', handleVisibility);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [activeTab]);
+  }, []);
 
   const loadAllData = async () => {
     try {
@@ -578,7 +583,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
       setPassengers(filteredPassengers);
       setRides(filteredRides);
       // Do not overwrite fareSettings if admin is actively viewing/editing any fare tab
-      if (f && activeTab !== 'fare' && activeTab !== 'ride_charges' && activeTab !== 'courier_charges') {
+      if (f && activeTabRef.current !== 'fare' && activeTabRef.current !== 'ride_charges' && activeTabRef.current !== 'courier_charges') {
         const localSaved = localStorage.getItem('motoride_admin_fare_settings');
         if (!localSaved) {
           setFareSettings(f);
