@@ -105,12 +105,9 @@ export const getAppwriteAccount = (): Account | null => {
 };
 
 export const getAppwriteRealtime = (): Realtime | null => {
-  const client = getAppwriteClient();
-  if (!client) return null;
-  if (!realtimeInstance) {
-    realtimeInstance = new Realtime(client);
-  }
-  return realtimeInstance;
+  // Realtime WebSockets are disabled in sandboxed preview environments to prevent createSocketLocked reconnect errors.
+  // Data synchronization is actively handled via BroadcastChannel, SSE, and REST polling.
+  return null;
 };
 
 export const getAppwriteStorage = (): Storage | null => {

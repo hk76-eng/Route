@@ -279,7 +279,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({
                 – Ride & Courier Booking
               </span>
             </div>
-            <p className="text-[11px] text-white/80 font-medium">Real-Time Mobility, Parcel Delivery & Live Captain Bidding</p>
+            <p className="text-[11px] text-white/80 font-medium">Real-Time Mobility & Parcel Delivery</p>
           </div>
         </div>
 

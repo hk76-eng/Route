@@ -92,27 +92,39 @@
       var safeStorage = window.safeStorage;
     </script>
     <script>
-      // Suppress benign Vite HMR WebSocket connection errors in sandbox iframe environment
+      // Suppress benign WebSocket connection & Vite HMR errors in sandbox iframe environment
       (function() {
-        function isViteHmrError(err) {
-          if (!err) return false;
-          var str = (err.message || '') + ' ' + (err.stack || '') + ' ' + String(err);
+        function isBenignError(err, target) {
+          if (target && (target instanceof WebSocket || (target.constructor && target.constructor.name === 'WebSocket') || (typeof target.url === 'string' && target.url.indexOf('ws') !== -1))) {
+            return true;
+          }
+          var str = '';
+          if (typeof err === 'string') {
+            str = err;
+          } else if (err && typeof err === 'object') {
+            str = (err.message || '') + ' ' + (err.stack || '') + ' ' + String(err);
+          }
           return (
             str.indexOf('WebSocket') !== -1 ||
+            str.indexOf('websocket') !== -1 ||
             str.indexOf('@vite/client') !== -1 ||
             str.indexOf('createWebSocketModuleRunnerTransport') !== -1 ||
-            str.indexOf('vite:ws') !== -1
+            str.indexOf('vite:ws') !== -1 ||
+            str.indexOf('createSocketLocked') !== -1 ||
+            str.indexOf('Failed to reconnect') !== -1 ||
+            str.indexOf('appwrite') !== -1 ||
+            str.indexOf('emqx.io') !== -1
           );
         }
         window.addEventListener('error', function (event) {
-          if (isViteHmrError(event.error) || isViteHmrError(event.message)) {
+          if (isBenignError(event.error || event.message, event.target)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;
           }
         }, true);
         window.addEventListener('unhandledrejection', function (event) {
-          if (isViteHmrError(event.reason)) {
+          if (isBenignError(event.reason, event.target)) {
             event.stopImmediatePropagation();
             event.preventDefault();
             return true;

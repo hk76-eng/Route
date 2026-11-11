@@ -198,8 +198,8 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     }
   };
 
-  // Default to false so the map and Captain live GPS position are immediately 100% visible
-  const [is100Full, setIs100Full] = useState<boolean>(false);
+  // Show passenger ride details on 100% full screen by default when a ride is active
+  const [is100Full, setIs100Full] = useState<boolean>(true);
 
   // Uber-Style Single Ride Dispatch State (replaces multi-card live request page)
   const [declinedRideIds, setDeclinedRideIds] = useState<Set<string>>(new Set());
@@ -911,6 +911,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         ride
       );
       setActiveRide(updated);
+      setIs100Full(true);
       setActiveTab('flow');
       setInspectedRide(null);
       setAvailableRides((prev) => prev.filter((r) => r.id !== ride.id));
@@ -2000,66 +2001,107 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   return (
     <div className="relative w-full h-[calc(100dvh-64px)] sm:h-[calc(100vh-68px)] overflow-hidden bg-slate-950">
       {activeRide ? (
-        /* Active Ride Split View: Top Half Map (50%), Bottom Half Ride Details (50%) with 50% / 100% Toggle Switch */
+        /* Active Ride View: 100% Full Screen Passenger Ride Details with Center Dropdown Toggle */
         <div className="absolute inset-0 w-full h-full flex flex-col z-0">
-          {/* Top Map: 50% height in 50% mode, hidden/0% in 100% details mode */}
+          {/* Map Layer: Visible when toggled to map mode (is100Full === false) */}
           <div
             className={`w-full transition-all duration-300 ease-in-out relative z-0 border-b-2 border-black shrink-0 ${
-              is100Full ? 'h-0 overflow-hidden border-b-0 opacity-0 pointer-events-none' : 'h-[50dvh] sm:h-1/2 opacity-100'
+              is100Full
+                ? 'h-0 overflow-hidden border-b-0 opacity-0 pointer-events-none'
+                : 'h-full opacity-100'
             }`}
           >
             {renderCaptainMap(true)}
-          </div>
 
-          {/* Bottom Active Ride Details: 50% in split mode, 100% in full mode */}
-          <div
-            className={`w-full flex-1 bg-white border-t-2 border-black shadow-[0_-12px_45px_rgba(0,0,0,0.25)] flex flex-col overflow-hidden relative z-10 transition-all duration-300 ease-in-out ${
-              is100Full ? 'h-full' : 'h-[50dvh] sm:h-1/2'
-            }`}
-          >
-            {/* Header with 50% / 100% Toggle Switch */}
-            <div className="px-3.5 sm:px-5 py-2.5 bg-slate-100 border-b border-slate-200 flex items-center justify-between select-none shrink-0 shadow-xs">
-              <div className="flex items-center gap-2 min-w-0 pr-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                <span className="text-xs sm:text-sm font-black text-slate-900 truncate">
-                  Active Trip • #{activeRide.ride_code} ({activeRide.status.replace(/_/g, ' ')})
-                </span>
-              </div>
-
-              {/* 50% & 100% Toggle Switch Control */}
-              <div className="flex items-center bg-slate-200/90 p-1 rounded-xl border border-slate-300 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIs100Full(false)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                    !is100Full
-                      ? 'bg-black text-white shadow-sm'
-                      : 'text-slate-700 hover:text-slate-950 hover:bg-slate-300/70'
-                  }`}
-                  title="50% Half Screen View (Split Map & Details)"
-                >
-                  <Minimize2 className="w-3.5 h-3.5" />
-                  <span>50%</span>
-                </button>
+            {/* When viewing full map, show center floating pill to drop down / open back 100% full details */}
+            {!is100Full && (
+              <div className="absolute top-4 inset-x-0 z-[1200] flex justify-center pointer-events-none">
                 <button
                   type="button"
                   onClick={() => setIs100Full(true)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                    is100Full
-                      ? 'bg-black text-white shadow-sm'
-                      : 'text-slate-700 hover:text-slate-950 hover:bg-slate-300/70'
-                  }`}
-                  title="100% Full Screen (Expand Trip Details)"
+                  className="pointer-events-auto inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-black/90 hover:bg-black text-amber-400 hover:text-amber-300 border border-amber-500/50 shadow-[0_8px_30px_rgba(0,0,0,0.6)] backdrop-blur-md font-black text-xs transition-all active:scale-95 cursor-pointer"
+                  title="Open 100% Full Screen Passenger Ride Details"
                 >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                  <span>100%</span>
+                  <ChevronDown className="w-4 h-4 stroke-[3] animate-bounce" />
+                  <span>Show 100% Ride Details</span>
+                  <span className="bg-amber-400 text-black text-[10px] font-black px-1.5 py-0.5 rounded-full">
+                    #{activeRide.ride_code}
+                  </span>
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* Passenger Ride Details Panel: 100% Full Screen when is100Full is true, or collapsed when viewing map */}
+          <div
+            className={`w-full bg-white flex flex-col overflow-hidden relative z-10 transition-all duration-300 ease-in-out ${
+              is100Full
+                ? 'h-full flex-1'
+                : 'h-16 border-t-2 border-black shadow-[0_-12px_30px_rgba(0,0,0,0.3)] shrink-0'
+            }`}
+          >
+            {/* Center Drop Down Toggle Header Bar */}
+            <div className="px-3.5 sm:px-5 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between select-none shrink-0 shadow-md">
+              {/* Left: Ride ID and Status */}
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="text-xs sm:text-sm font-black text-white truncate font-mono">
+                  #{activeRide.ride_code}
+                </span>
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-md bg-white/10 text-white/90 text-[10px] font-bold uppercase tracking-wider">
+                  {activeRide.status.replace(/_/g, ' ')}
+                </span>
+              </div>
+
+              {/* Center: Drop Down / Toggle Button for Full Screen Ride Details */}
+              <button
+                type="button"
+                onClick={() => setIs100Full((prev) => !prev)}
+                className="px-4 py-2 rounded-full bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-black text-xs flex items-center gap-1.5 shadow-[0_2px_12px_rgba(245,158,11,0.4)] transition-all cursor-pointer border border-amber-300"
+                title={is100Full ? 'Hide details and show full map' : 'Open 100% full screen passenger details'}
+                aria-label="Toggle passenger ride details full screen"
+              >
+                {is100Full ? (
+                  <>
+                    <ChevronDown className="w-4 h-4 stroke-[3]" />
+                    <span className="tracking-wide">Hide Details (Show Map)</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="w-4 h-4 stroke-[3]" />
+                    <span className="tracking-wide">100% Full Ride Details</span>
+                  </>
+                )}
+              </button>
+
+              {/* Right: Quick Chat / Call icons */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowChatModal(true)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all cursor-pointer"
+                  title="Chat with Passenger"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-white" />
+                </button>
+                <a
+                  href={`tel:${activeRide.passenger_phone || '+919780012345'}`}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all cursor-pointer"
+                  title="Call Passenger"
+                >
+                  <Phone className="w-3.5 h-3.5 text-white" />
+                </a>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 scrollbar-thin bg-white">
-              {renderCaptainControls()}
-            </div>
+            {/* Full 100% Scrollable Passenger Ride Details Content */}
+            {is100Full && (
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-thin bg-slate-50">
+                <div className="max-w-2xl mx-auto">
+                  {renderCaptainControls()}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
