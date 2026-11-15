@@ -209,13 +209,11 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const cancelledRideIdsRef = useRef<Set<string>>(new Set());
 
-  // Helper: Only treat newly created live requests (within 90s) as real-time incoming rides
+  // Helper: Only treat newly created live requests as real-time incoming rides (clock-skew safe)
   const isFreshRealtimeRequest = (r: MotorideRide | null | undefined): boolean => {
     if (!r || !r.id) return false;
     if (cancelledRideIdsRef.current.has(r.id)) return false;
-    if (r.status !== 'requested' && r.status !== 'captain_offered') return false;
-    const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
-    return !isNaN(createdMs) && Date.now() - createdMs <= 90 * 1000;
+    return motorideApi.isFreshRealtime(r);
   };
 
   // Active candidate rides for single Uber dispatch (only real-time passenger requests, excluding declined/cancelled)
@@ -500,6 +498,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       if (!newRide || !newRide.id) return;
       if (cancelledRideIdsRef.current.has(newRide.id)) return;
       if (newRide.status && newRide.status !== 'requested' && newRide.status !== 'captain_offered') return;
+      motorideApi.markLiveReceived(newRide.id);
       motorideApi.cacheRide(newRide);
       // Clear ride ID from decline set so newly created ride always rings for captain
       setDeclinedRideIds((prev) => {
@@ -580,6 +579,11 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
     const unsubActiveSync = realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
       if (!Array.isArray(rides)) return;
+      rides.forEach((r) => {
+        if (r && r.id && !cancelledRideIdsRef.current.has(r.id) && (r.status === 'requested' || r.status === 'captain_offered')) {
+          motorideApi.markLiveReceived(r.id);
+        }
+      });
       const valid = rides.filter((r) => isFreshRealtimeRequest(r));
       if (valid.length > 0) {
         valid.forEach((r) => motorideApi.cacheRide(r));
@@ -596,8 +600,13 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       }
     });
 
-    // Request active rides sync over MQTT from any other connected devices
+    // Request active rides sync over MQTT from any other connected devices now and upon reconnect
     realtimeSync.requestSync();
+    const unsubConnectionStatus = realtimeSync.on('CONNECTION_STATUS', (status: any) => {
+      if (status?.connected) {
+        realtimeSync.requestSync();
+      }
+    });
 
     // Real-time synchronization when rides are completed and earnings update
     const unsubEarningsUpdated = realtimeSync.on('EARNINGS_UPDATED', () => {
@@ -638,6 +647,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       unsubRideStatusChanged();
       unsubRideCancelled();
       unsubActiveSync();
+      unsubConnectionStatus();
       unsubEarningsUpdated();
       clearInterval(rolloverInterval);
       clearInterval(pollInterval);
@@ -976,6 +986,13 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       console.warn('Failed to toggle status:', err);
     }
   };
+
+  useEffect(() => {
+    if (isOnline) {
+      realtimeSync.requestSync();
+      loadAvailableRides();
+    }
+  }, [isOnline]);
 
   // Accept Ride Immediately
   const handleAcceptRide = async (ride: MotorideRide) => {

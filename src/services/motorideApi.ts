@@ -13,6 +13,7 @@ import {
   PassengerLiveLocation,
 } from '../types/motoride';
 import { getAppwriteDatabases, isAppwriteConfigured, appwriteDatabaseId, Permission, Role, Query } from '../lib/appwrite';
+import { isStaticBackendUnavailable, markStaticBackendUnavailable, resolveMotorideApiBase } from '../lib/apiBase';
 import { safeStorage } from '../lib/safeStorage';
 import { appwriteAuth } from '../lib/appwriteAuth';
 import { realtimeSync } from './realtimeSync';
@@ -49,9 +50,46 @@ function mergeRideWithProgression(existing: Partial<MotorideRide> | undefined, i
   } as MotorideRide;
 }
 
-const API_BASE = '/api/motoride';
+const getApiBase = () => resolveMotorideApiBase();
 
-function sanitizeForAppwrite(data: Record<string, any>): Record<string, any> {
+const REALTIME_RIDE_WINDOW_MS = 180 * 1000; // 3 minutes window for real-time incoming requests
+const CLOCK_SKEW_TOLERANCE_MS = 10 * 60 * 1000; // Allow up to 10 min clock difference between passenger & captain devices
+let appwriteDbMissingUntil = 0;
+
+function isAppwriteDbAvailable(): boolean {
+  return Boolean(getAppwriteDatabases() && isAppwriteConfigured() && Date.now() >= appwriteDbMissingUntil);
+}
+
+function mapAppwriteDocToRide(doc: any): MotorideRide {
+  const rideId = doc.id || doc.$id;
+  let parsedOffers = doc.offers;
+  if (typeof doc.offers === 'string') {
+    try {
+      parsedOffers = JSON.parse(doc.offers);
+    } catch {}
+  }
+  const offeredFare = Number(doc.offered_fare ?? doc.fare_amount ?? doc.final_fare ?? 0);
+  const finalFare = Number(doc.final_fare ?? doc.fare_amount ?? doc.offered_fare ?? offeredFare);
+  return {
+    ...doc,
+    id: rideId,
+    ride_code: doc.ride_code || doc.pin || `RIDE-${String(rideId).slice(-4).toUpperCase()}`,
+    dropoff_address: doc.dropoff_address || doc.drop_address || '',
+    dropoff_lat: Number(doc.dropoff_lat ?? doc.drop_lat ?? 0),
+    dropoff_lng: Number(doc.dropoff_lng ?? doc.drop_lng ?? 0),
+    offered_fare: offeredFare,
+    final_fare: finalFare,
+    estimated_fare: Number(doc.estimated_fare ?? doc.fare_amount ?? offeredFare),
+    ride_type: doc.ride_type || doc.type || 'bike',
+    payment_method: doc.payment_method || 'cash',
+    payment_status: doc.payment_status || 'pending',
+    created_at: doc.created_at || doc.$createdAt || new Date().toISOString(),
+    updated_at: doc.updated_at || doc.$updatedAt || doc.created_at || doc.$createdAt || new Date().toISOString(),
+    offers: Array.isArray(parsedOffers) ? parsedOffers : [],
+  } as MotorideRide;
+}
+
+function sanitizeForAppwrite(data: Record<string, any>, collectionId?: string): Record<string, any> {
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
     if (value === undefined) continue;
@@ -63,6 +101,16 @@ function sanitizeForAppwrite(data: Record<string, any>): Record<string, any> {
       result[key] = value;
     }
   }
+  if (collectionId === 'rides') {
+    if (result.dropoff_address !== undefined && result.drop_address === undefined) result.drop_address = result.dropoff_address;
+    if (result.dropoff_lat !== undefined && result.drop_lat === undefined) result.drop_lat = result.dropoff_lat;
+    if (result.dropoff_lng !== undefined && result.drop_lng === undefined) result.drop_lng = result.dropoff_lng;
+    if (result.fare_amount === undefined && (result.offered_fare !== undefined || result.final_fare !== undefined)) {
+      result.fare_amount = Number(result.offered_fare ?? result.final_fare ?? 0);
+    }
+    if (result.type === undefined && result.ride_type !== undefined) result.type = result.ride_type;
+    if (result.pin === undefined && result.ride_code !== undefined) result.pin = String(result.ride_code).slice(0, 10);
+  }
   return result;
 }
 
@@ -72,10 +120,10 @@ async function safeAppwriteCreateDocument(
   data: Record<string, any>
 ): Promise<boolean> {
   const databases = getAppwriteDatabases();
-  if (!databases || !isAppwriteConfigured()) return false;
+  if (!databases || !isAppwriteDbAvailable()) return false;
 
-  let currentData = sanitizeForAppwrite(data);
-  const maxRetries = 3;
+  let currentData = sanitizeForAppwrite(data, collectionId);
+  const maxRetries = 20;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -89,7 +137,11 @@ async function safeAppwriteCreateDocument(
       return true;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || '';
-      if (msg.includes('database_not_found') || err?.code === 404) {
+      if (msg.includes('database_not_found') || err?.type === 'database_not_found') {
+        appwriteDbMissingUntil = Date.now() + 60 * 1000;
+        return false;
+      }
+      if (err?.code === 404) {
         return false;
       }
 
@@ -104,7 +156,11 @@ async function safeAppwriteCreateDocument(
         return true;
       } catch (err2: any) {
         const msg2 = err2?.message || err2?.toString() || '';
-        if (msg2.includes('database_not_found') || err2?.code === 404) {
+        if (msg2.includes('database_not_found') || err2?.type === 'database_not_found') {
+          appwriteDbMissingUntil = Date.now() + 60 * 1000;
+          return false;
+        }
+        if (err2?.code === 404) {
           return false;
         }
         const match2 = msg2.match(/Unknown attribute:\s*"([^"]+)"/) || msg2.match(/Unknown attribute:\s*([a-zA-Z0-9_]+)/);
@@ -113,8 +169,29 @@ async function safeAppwriteCreateDocument(
           continue;
         }
 
-        if (attempt === 0) {
-          const coreKeys = ['id', 'passenger_id', 'passenger_name', 'passenger_phone', 'pickup_address', 'pickup_lat', 'pickup_lng', 'dropoff_address', 'dropoff_lat', 'dropoff_lng', 'offered_fare', 'final_fare', 'ride_type', 'status', 'created_at', 'updated_at'];
+        if (attempt === 0 && collectionId === 'rides') {
+          const coreKeys = [
+            'passenger_id',
+            'passenger_name',
+            'passenger_phone',
+            'pickup_address',
+            'pickup_lat',
+            'pickup_lng',
+            'drop_address',
+            'drop_lat',
+            'drop_lng',
+            'dropoff_address',
+            'dropoff_lat',
+            'dropoff_lng',
+            'distance_km',
+            'fare_amount',
+            'offered_fare',
+            'final_fare',
+            'type',
+            'ride_type',
+            'status',
+            'pin',
+          ];
           const filtered: Record<string, any> = {};
           for (const k of coreKeys) {
             if (currentData[k] !== undefined) filtered[k] = currentData[k];
@@ -135,10 +212,10 @@ async function safeAppwriteUpdateDocument(
   data: Record<string, any>
 ): Promise<boolean> {
   const databases = getAppwriteDatabases();
-  if (!databases || !isAppwriteConfigured()) return false;
+  if (!databases || !isAppwriteDbAvailable()) return false;
 
-  let currentData = sanitizeForAppwrite(data);
-  const maxRetries = 3;
+  let currentData = sanitizeForAppwrite(data, collectionId);
+  const maxRetries = 15;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
@@ -146,7 +223,11 @@ async function safeAppwriteUpdateDocument(
       return true;
     } catch (err: any) {
       const msg = err?.message || err?.toString() || '';
-      if (msg.includes('database_not_found') || err?.code === 404) {
+      if (msg.includes('database_not_found') || err?.type === 'database_not_found') {
+        appwriteDbMissingUntil = Date.now() + 60 * 1000;
+        return false;
+      }
+      if (err?.code === 404) {
         return false;
       }
 
@@ -164,6 +245,29 @@ async function safeAppwriteUpdateDocument(
 // Local and cross-browser memory store for resilient instant sync
 const localRidesStore: Map<string, MotorideRide> = new Map();
 const localMessagesStore: Map<string, any[]> = new Map();
+const liveReceivedAtMap: Map<string, number> = new Map();
+
+export function markRideLiveReceived(rideId: string, timestamp: number = Date.now()): void {
+  if (!rideId) return;
+  if (!liveReceivedAtMap.has(rideId)) {
+    liveReceivedAtMap.set(rideId, timestamp);
+  }
+}
+
+export function isRideFreshRealtime(r: Partial<MotorideRide> | null | undefined): boolean {
+  if (!r || !r.id) return false;
+  if (r.status !== 'requested' && r.status !== 'captain_offered') return false;
+  const nowMs = Date.now();
+  const receivedAt = liveReceivedAtMap.get(r.id);
+  if (receivedAt !== undefined && nowMs - receivedAt <= REALTIME_RIDE_WINDOW_MS) {
+    return true;
+  }
+  const rawCreated = r.created_at || (r as any).$createdAt;
+  const createdMs = rawCreated ? new Date(rawCreated).getTime() : 0;
+  if (!createdMs || isNaN(createdMs)) return false;
+  const diff = nowMs - createdMs;
+  return diff <= REALTIME_RIDE_WINDOW_MS && diff >= -CLOCK_SKEW_TOLERANCE_MS;
+}
 
 // Initialize from safeStorage if available (do not resurrect old/previous pending ride requests)
 try {
@@ -176,7 +280,7 @@ try {
         if (r && r.id) {
           const isPending = r.status === 'requested' || r.status === 'captain_offered';
           const ageMs = r.created_at ? nowMs - new Date(r.created_at).getTime() : Infinity;
-          if (!isPending || (!isNaN(ageMs) && ageMs <= 60 * 1000)) {
+          if (!isPending || (!isNaN(ageMs) && ageMs <= REALTIME_RIDE_WINDOW_MS)) {
             localRidesStore.set(r.id, r);
           }
         }
@@ -205,14 +309,17 @@ realtimeSync.on('RIDE_MESSAGE_RECEIVED', (msg: any) => {
 realtimeSync.on('RIDE_DELETED', (data: any) => {
   if (data?.id) {
     localRidesStore.delete(data.id);
+    liveReceivedAtMap.delete(data.id);
     saveLocalRides();
   }
 });
 
-// Listen to incoming real-time broadcast and SSE events to keep local store in sync across all devices
+// Listen to incoming real-time broadcast, MQTT, and SSE events to keep local store in sync across all devices
 realtimeSync.on('RIDE_CREATED', (ride: MotorideRide) => {
   if (ride && ride.id) {
-    localRidesStore.set(ride.id, ride);
+    markRideLiveReceived(ride.id);
+    const existing = localRidesStore.get(ride.id);
+    localRidesStore.set(ride.id, existing ? mergeRideWithProgression(existing, ride) : ride);
     saveLocalRides();
   }
 });
@@ -306,6 +413,9 @@ realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
   if (Array.isArray(rides)) {
     rides.forEach((r) => {
       if (r && r.id) {
+        if (r.status === 'requested' || r.status === 'captain_offered') {
+          markRideLiveReceived(r.id);
+        }
         const existing = localRidesStore.get(r.id);
         localRidesStore.set(r.id, mergeRideWithProgression(existing, r));
       }
@@ -315,20 +425,26 @@ realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
 });
 
 realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
-  const activeRides = Array.from(localRidesStore.values()).filter(
-    (r) => r.status === 'requested' || r.status === 'captain_offered' || r.status === 'captain_accepted' || r.status === 'captain_arrived' || r.status === 'trip_started'
-  );
+  const activeRides = Array.from(localRidesStore.values()).filter((r) => isRideFreshRealtime(r));
   if (activeRides.length > 0) {
     realtimeSync.sendActiveRidesSync(activeRides);
   }
 });
 
 async function safeFetchJson<T = any>(url: string, options?: RequestInit, fallback: T = {} as T): Promise<T> {
+  if (isStaticBackendUnavailable() && url.startsWith('/api/motoride')) {
+    return fallback;
+  }
   try {
     const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type') || '';
     if (!res.ok) {
       const text = await res.text();
-      if (text && !text.trim().startsWith('<') && !text.trim().startsWith('The page')) {
+      if (contentType.includes('text/html') || text.trim().startsWith('<')) {
+        if (url.startsWith('/api/motoride')) markStaticBackendUnavailable();
+        return fallback;
+      }
+      if (text && !text.trim().startsWith('The page')) {
         try {
           const errJson = JSON.parse(text);
           if (errJson.error) {
@@ -341,7 +457,8 @@ async function safeFetchJson<T = any>(url: string, options?: RequestInit, fallba
       return fallback;
     }
     const text = await res.text();
-    if (!text || text.trim().startsWith('<') || text.trim().startsWith('The page')) {
+    if (!text || text.trim().startsWith('<') || text.trim().startsWith('The page') || contentType.includes('text/html')) {
+      if (url.startsWith('/api/motoride')) markStaticBackendUnavailable();
       return fallback;
     }
     return JSON.parse(text) as T;
@@ -396,7 +513,7 @@ export const motorideApi = {
 
     // 2. Fetch from backend API if available
     const json = await safeFetchJson<{ rides?: MotorideRide[] }>(
-      `${API_BASE}/rides?${queryParams.toString()}`,
+      `${getApiBase()}/rides?${queryParams.toString()}`,
       undefined,
       { rides: [] }
     );
@@ -412,39 +529,37 @@ export const motorideApi = {
       saveLocalRides();
     }
 
-    // 3. Fetch from Appwrite Cloud Database if configured
+    // 3. Fetch from Appwrite Cloud Database if configured and accessible
     const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
+    if (databases && isAppwriteDbAvailable()) {
       try {
         let res = await databases
           .listDocuments(appwriteDatabaseId, 'rides', [
             Query.orderDesc('$createdAt'),
             Query.limit(100),
           ])
-          .catch(() => null);
-        if (!res) {
-          res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch(() => null);
+          .catch((err: any) => {
+            if (err?.message?.includes('database_not_found') || err?.type === 'database_not_found') {
+              appwriteDbMissingUntil = Date.now() + 60 * 1000;
+            }
+            return null;
+          });
+        if (!res && isAppwriteDbAvailable()) {
+          res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch((err: any) => {
+            if (err?.message?.includes('database_not_found') || err?.type === 'database_not_found') {
+              appwriteDbMissingUntil = Date.now() + 60 * 1000;
+            }
+            return null;
+          });
         }
         if (res?.documents && Array.isArray(res.documents)) {
           (res.documents as unknown as any[]).forEach((doc) => {
             if (doc && (doc.id || doc.$id)) {
-              const rideId = doc.id || doc.$id;
-              let parsedOffers = doc.offers;
-              if (typeof doc.offers === 'string') {
-                try {
-                  parsedOffers = JSON.parse(doc.offers);
-                } catch {}
-              }
-              const rideFromDoc: MotorideRide = {
-                ...doc,
-                id: rideId,
-                offers: Array.isArray(parsedOffers) ? parsedOffers : [],
-              } as MotorideRide;
-
-              const existing = localRidesStore.get(rideId) || map.get(rideId);
+              const rideFromDoc = mapAppwriteDocToRide(doc);
+              const existing = localRidesStore.get(rideFromDoc.id) || map.get(rideFromDoc.id);
               const merged = mergeRideWithProgression(existing, rideFromDoc);
-              map.set(rideId, merged);
-              localRidesStore.set(rideId, merged);
+              map.set(rideFromDoc.id, merged);
+              localRidesStore.set(rideFromDoc.id, merged);
             }
           });
           saveLocalRides();
@@ -458,14 +573,7 @@ export const motorideApi = {
 
     // Apply strict filtering to ensure precision (only live real-time requests for captain feed)
     if (params?.active_for_captain) {
-      const nowMs = Date.now();
-      result = result.filter((r) => {
-        if (!r || (r.status !== 'requested' && r.status !== 'captain_offered')) {
-          return false;
-        }
-        const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
-        return !isNaN(createdMs) && nowMs - createdMs <= 90 * 1000;
-      });
+      result = result.filter((r) => isRideFreshRealtime(r));
     } else {
       if (params?.status && params.status !== 'all') {
         result = result.filter((r) => r && r.status === params.status);
@@ -483,12 +591,20 @@ export const motorideApi = {
     );
   },
 
+  markLiveReceived(rideId: string) {
+    markRideLiveReceived(rideId);
+  },
+
+  isFreshRealtime(ride: Partial<MotorideRide> | null | undefined): boolean {
+    return isRideFreshRealtime(ride);
+  },
+
   async getRideById(id: string): Promise<MotorideRide | null> {
     if (localRidesStore.has(id)) {
       return localRidesStore.get(id)!;
     }
 
-    const json = await safeFetchJson<{ ride?: MotorideRide }>(`${API_BASE}/rides/${id}`, undefined, {});
+    const json = await safeFetchJson<{ ride?: MotorideRide }>(`${getApiBase()}/rides/${id}`, undefined, {});
     if (json?.ride) {
       localRidesStore.set(id, json.ride);
       saveLocalRides();
@@ -496,16 +612,11 @@ export const motorideApi = {
     }
 
     const databases = getAppwriteDatabases();
-    if (databases && isAppwriteConfigured()) {
+    if (databases && isAppwriteDbAvailable()) {
       try {
         const doc = await databases.getDocument(appwriteDatabaseId, 'rides', id).catch(() => null);
         if (doc) {
-          const docId = doc.id || doc.$id;
-          let parsedOffers = doc.offers;
-          if (typeof doc.offers === 'string') {
-            try { parsedOffers = JSON.parse(doc.offers); } catch {}
-          }
-          const ride = { ...doc, id: docId, offers: Array.isArray(parsedOffers) ? parsedOffers : [] } as unknown as MotorideRide;
+          const ride = mapAppwriteDocToRide(doc);
           localRidesStore.set(id, ride);
           saveLocalRides();
           return ride;
@@ -533,10 +644,11 @@ export const motorideApi = {
     } as MotorideRide;
 
     // 1. Store locally in memory and persistent storage
+    markRideLiveReceived(payload.id);
     localRidesStore.set(payload.id, payload);
     saveLocalRides();
 
-    // 2. Broadcast immediately over Realtime (Appwrite / SSE / BroadcastChannel)
+    // 2. Broadcast immediately over Realtime (MQTT / Appwrite / SSE / BroadcastChannel)
     realtimeSync.broadcast('RIDE_CREATED', payload);
 
     // 3. Post to Appwrite database in background if configured
@@ -544,7 +656,7 @@ export const motorideApi = {
 
     // 4. Also post to backend if running
     safeFetchJson<{ ride?: MotorideRide }>(
-      `${API_BASE}/rides`,
+      `${getApiBase()}/rides`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -608,7 +720,7 @@ export const motorideApi = {
     await safeAppwriteUpdateDocument('rides', rideId, updatedRide);
 
     safeFetchJson<{ ride: MotorideRide }>(
-      `${API_BASE}/rides/${rideId}/accept`,
+      `${getApiBase()}/rides/${rideId}/accept`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -663,7 +775,7 @@ export const motorideApi = {
     });
 
     const serverResult = await safeFetchJson<{ ride: MotorideRide; offer: RideOffer }>(
-      `${API_BASE}/rides/${rideId}/offer`,
+      `${getApiBase()}/rides/${rideId}/offer`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -721,7 +833,7 @@ export const motorideApi = {
     });
 
     const serverRes = await safeFetchJson<{ ride: MotorideRide }>(
-      `${API_BASE}/rides/${rideId}/accept-offer`,
+      `${getApiBase()}/rides/${rideId}/accept-offer`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -815,7 +927,7 @@ export const motorideApi = {
     await Promise.allSettled([
       safeAppwriteUpdateDocument('rides', rideId, updatePayload),
       safeFetchJson<{ ride: MotorideRide }>(
-        `${API_BASE}/rides/${rideId}/status`,
+        `${getApiBase()}/rides/${rideId}/status`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -867,7 +979,7 @@ export const motorideApi = {
 
   async updateCaptainLocation(rideId: string, lat: number, lng: number): Promise<void> {
     realtimeSync.broadcast('CAPTAIN_LOCATION_UPDATED', { ride_id: rideId, lat, lng });
-    fetch(`${API_BASE}/rides/${rideId}/location`, {
+    fetch(`${getApiBase()}/rides/${rideId}/location`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lat, lng }),
@@ -917,14 +1029,14 @@ export const motorideApi = {
     }
 
     if (data.ride_id) {
-      fetch(`${API_BASE}/rides/${data.ride_id}/location`, {
+      fetch(`${getApiBase()}/rides/${data.ride_id}/location`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lat: data.latitude, lng: data.longitude }),
       }).catch(() => {});
     }
 
-    fetch(`${API_BASE}/captain-location`, {
+    fetch(`${getApiBase()}/captain-location`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -970,7 +1082,7 @@ export const motorideApi = {
       }
     }
 
-    fetch(`${API_BASE}/passenger-location`, {
+    fetch(`${getApiBase()}/passenger-location`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -983,7 +1095,7 @@ export const motorideApi = {
   ): Promise<PassengerLiveLocation | null> {
     if (rideId) {
       try {
-        const res = await fetch(`${API_BASE}/rides/${rideId}/passenger-location`);
+        const res = await fetch(`${getApiBase()}/rides/${rideId}/passenger-location`);
         if (res.ok) {
           const json = await res.json();
           return json.location || null;
@@ -1004,7 +1116,7 @@ export const motorideApi = {
       if (typeof userLat === 'number') queryParams.set('lat', userLat.toString());
       if (typeof userLng === 'number') queryParams.set('lng', userLng.toString());
 
-      const res = await fetch(`${API_BASE}/captains/available?${queryParams.toString()}`);
+      const res = await fetch(`${getApiBase()}/captains/available?${queryParams.toString()}`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.captains)) {
@@ -1029,12 +1141,12 @@ export const motorideApi = {
   },
 
   async getCaptains(): Promise<Captain[]> {
-    const json = await safeFetchJson<{ captains?: Captain[] }>(`${API_BASE}/captains`, undefined, { captains: [] });
+    const json = await safeFetchJson<{ captains?: Captain[] }>(`${getApiBase()}/captains`, undefined, { captains: [] });
     return Array.isArray(json?.captains) ? json.captains : [];
   },
 
   async getCaptainById(id: string): Promise<Captain | null> {
-    const json = await safeFetchJson<{ captain?: Captain }>(`${API_BASE}/captains/${id}`, undefined, {});
+    const json = await safeFetchJson<{ captain?: Captain }>(`${getApiBase()}/captains/${id}`, undefined, {});
     return json?.captain || null;
   },
 
@@ -1062,7 +1174,7 @@ export const motorideApi = {
         today_income: number;
         completed_rides_today: number;
         today_date: string;
-      }>(`${API_BASE}/captains/${captainId}/today-income?tz=${encodeURIComponent(timezone)}`);
+      }>(`${getApiBase()}/captains/${captainId}/today-income?tz=${encodeURIComponent(timezone)}`);
 
       if (json && typeof json.today_income === 'number') {
         todayIncome = json.today_income;
@@ -1106,7 +1218,7 @@ export const motorideApi = {
   },
 
   async toggleCaptainOnline(id: string, is_online?: boolean): Promise<Captain> {
-    const json = await safeFetchJson<{ captain?: Captain }>(`${API_BASE}/captains/${id}/toggle-online`, {
+    const json = await safeFetchJson<{ captain?: Captain }>(`${getApiBase()}/captains/${id}/toggle-online`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_online }),
@@ -1118,7 +1230,7 @@ export const motorideApi = {
     id: string,
     profileData: { full_name?: string; phone?: string; avatar_url?: string }
   ): Promise<Captain> {
-    const json = await safeFetchJson<{ captain: Captain }>(`${API_BASE}/captains/${id}/profile`, {
+    const json = await safeFetchJson<{ captain: Captain }>(`${getApiBase()}/captains/${id}/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profileData),
@@ -1130,7 +1242,7 @@ export const motorideApi = {
     id: string,
     vehicleData: { model: string; plate_number: string; vehicle_type?: string; color?: string }
   ): Promise<Captain> {
-    const json = await safeFetchJson<{ captain: Captain }>(`${API_BASE}/captains/${id}/vehicle`, {
+    const json = await safeFetchJson<{ captain: Captain }>(`${getApiBase()}/captains/${id}/vehicle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(vehicleData),
@@ -1139,7 +1251,7 @@ export const motorideApi = {
   },
 
   async updateCaptainApproval(id: string, is_approved: boolean, is_active?: boolean): Promise<Captain> {
-    const json = await safeFetchJson<{ captain: Captain }>(`${API_BASE}/captains/${id}/status`, {
+    const json = await safeFetchJson<{ captain: Captain }>(`${getApiBase()}/captains/${id}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_approved, is_active }),
@@ -1149,12 +1261,12 @@ export const motorideApi = {
 
   // 3. Passengers
   async getAccounts(): Promise<any[]> {
-    const json = await safeFetchJson<{ accounts?: any[] }>(`${API_BASE}/auth/accounts`, undefined, { accounts: [] });
+    const json = await safeFetchJson<{ accounts?: any[] }>(`${getApiBase()}/auth/accounts`, undefined, { accounts: [] });
     return json.accounts || [];
   },
 
   async getPassengers(): Promise<Passenger[]> {
-    const json = await safeFetchJson<{ passengers?: Passenger[] }>(`${API_BASE}/passengers`, undefined, { passengers: [] });
+    const json = await safeFetchJson<{ passengers?: Passenger[] }>(`${getApiBase()}/passengers`, undefined, { passengers: [] });
     return json.passengers || [];
   },
 
@@ -1162,7 +1274,7 @@ export const motorideApi = {
     id: string,
     profileData: { full_name?: string; name?: string; phone?: string; email?: string; emergency_contact?: string }
   ): Promise<Passenger> {
-    const json = await safeFetchJson<{ passenger: Passenger }>(`${API_BASE}/passengers/${id}/profile`, {
+    const json = await safeFetchJson<{ passenger: Passenger }>(`${getApiBase()}/passengers/${id}/profile`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profileData),
@@ -1191,7 +1303,7 @@ export const motorideApi = {
       }
     } catch {}
 
-    const json = await safeFetchJson<{ settings: FareSettings }>(`${API_BASE}/fare-settings`, undefined, {
+    const json = await safeFetchJson<{ settings: FareSettings }>(`${getApiBase()}/fare-settings`, undefined, {
       settings: DEFAULT_MOTORIDE_FARE_SETTINGS,
     });
     const returned = json.settings || DEFAULT_MOTORIDE_FARE_SETTINGS;
@@ -1217,7 +1329,7 @@ export const motorideApi = {
       safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(merged));
     } catch {}
 
-    const json = await safeFetchJson<{ settings: FareSettings }>(`${API_BASE}/fare-settings`, {
+    const json = await safeFetchJson<{ settings: FareSettings }>(`${getApiBase()}/fare-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
@@ -1235,7 +1347,7 @@ export const motorideApi = {
 
   // 5. QR Code Settings
   async getQRSettings(): Promise<QRCodeSetting> {
-    const json = await safeFetchJson<{ qr: QRCodeSetting }>(`${API_BASE}/qr-settings`, undefined, {
+    const json = await safeFetchJson<{ qr: QRCodeSetting }>(`${getApiBase()}/qr-settings`, undefined, {
       qr: {
         id: 'default',
         upi_id: 'route.pay@upi',
@@ -1250,7 +1362,7 @@ export const motorideApi = {
   },
 
   async updateQRSettings(qr: Partial<QRCodeSetting>): Promise<QRCodeSetting> {
-    const json = await safeFetchJson<{ qr: QRCodeSetting }>(`${API_BASE}/qr-settings`, {
+    const json = await safeFetchJson<{ qr: QRCodeSetting }>(`${getApiBase()}/qr-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(qr),
@@ -1261,7 +1373,7 @@ export const motorideApi = {
   // 6. Wallet
   async getWallet(userId: string): Promise<{ wallet: { balance: number; currency: string }; transactions: WalletTransaction[] }> {
     const json = await safeFetchJson<{ wallet?: { balance: number; currency: string }; transactions?: WalletTransaction[] }>(
-      `${API_BASE}/wallet/${userId}`,
+      `${getApiBase()}/wallet/${userId}`,
       undefined,
       { wallet: { balance: 0, currency: '₹' }, transactions: [] }
     );
@@ -1272,7 +1384,7 @@ export const motorideApi = {
   },
 
   async topupWallet(userId: string, amount: number): Promise<{ balance: number }> {
-    const json = await safeFetchJson<{ wallet: { balance: number } }>(`${API_BASE}/wallet/${userId}/topup`, {
+    const json = await safeFetchJson<{ wallet: { balance: number } }>(`${getApiBase()}/wallet/${userId}/topup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount }),
@@ -1282,7 +1394,7 @@ export const motorideApi = {
 
   // 7. Admin Stats & Notifications
   async getAdminStats(): Promise<AdminDashboardStats> {
-    const json = await safeFetchJson<{ stats: AdminDashboardStats }>(`${API_BASE}/stats`, undefined, {
+    const json = await safeFetchJson<{ stats: AdminDashboardStats }>(`${getApiBase()}/stats`, undefined, {
       stats: {
         totalPassengers: 0,
         totalCaptains: 0,
@@ -1299,7 +1411,7 @@ export const motorideApi = {
   },
 
   async getNotifications(): Promise<MotorideNotification[]> {
-    const json = await safeFetchJson<{ notifications?: MotorideNotification[] }>(`${API_BASE}/notifications`, undefined, {
+    const json = await safeFetchJson<{ notifications?: MotorideNotification[] }>(`${getApiBase()}/notifications`, undefined, {
       notifications: [],
     });
     return json.notifications || [];
@@ -1314,7 +1426,7 @@ export const motorideApi = {
     local.forEach((m) => { if (m && m.id) map.set(m.id, m); });
 
     // 2. Fetch from Backend API
-    const json = await safeFetchJson<{ messages?: any[] }>(`${API_BASE}/rides/${rideId}/messages`, undefined, { messages: [] });
+    const json = await safeFetchJson<{ messages?: any[] }>(`${getApiBase()}/rides/${rideId}/messages`, undefined, { messages: [] });
     if (json?.messages && Array.isArray(json.messages)) {
       json.messages.forEach((m: any) => {
         if (m && m.id) map.set(m.id, m);
@@ -1348,7 +1460,7 @@ export const motorideApi = {
 
     // 3. Post to Backend API
     safeFetchJson<{ message?: any }>(
-      `${API_BASE}/rides/${rideId}/messages`,
+      `${getApiBase()}/rides/${rideId}/messages`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1362,14 +1474,14 @@ export const motorideApi = {
 
   // 9. Admin Purge and Individual Item Delete Operations
   async deleteCaptain(id: string): Promise<boolean> {
-    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${API_BASE}/captains/${id}`, {
+    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${getApiBase()}/captains/${id}`, {
       method: 'DELETE',
     });
     return Boolean(json?.success);
   },
 
   async deletePassenger(id: string): Promise<boolean> {
-    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${API_BASE}/passengers/${id}`, {
+    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${getApiBase()}/passengers/${id}`, {
       method: 'DELETE',
     });
     return Boolean(json?.success);
@@ -1378,7 +1490,7 @@ export const motorideApi = {
   async deleteRide(id: string): Promise<boolean> {
     localRidesStore.delete(id);
     saveLocalRides();
-    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${API_BASE}/rides/${id}`, {
+    const json = await safeFetchJson<{ success: boolean; deleted: boolean }>(`${getApiBase()}/rides/${id}`, {
       method: 'DELETE',
     });
     return Boolean(json?.success);
@@ -1387,7 +1499,7 @@ export const motorideApi = {
   async clearAllRides(): Promise<boolean> {
     localRidesStore.clear();
     saveLocalRides();
-    const json = await safeFetchJson<{ success: boolean }>(`${API_BASE}/admin/clear-rides`, {
+    const json = await safeFetchJson<{ success: boolean }>(`${getApiBase()}/admin/clear-rides`, {
       method: 'POST',
     });
     return Boolean(json?.success);
@@ -1415,7 +1527,7 @@ export const motorideApi = {
         safeStorage.removeItem('motoride_passenger_phone');
       } catch {}
     }
-    const json = await safeFetchJson<{ success: boolean; message: string }>(`${API_BASE}/admin/purge-all`, {
+    const json = await safeFetchJson<{ success: boolean; message: string }>(`${getApiBase()}/admin/purge-all`, {
       method: 'POST',
     });
     return Boolean(json?.success);
@@ -1455,7 +1567,7 @@ export const motorideApi = {
     const current = this.getApkRelease();
     try {
       const res = await safeFetchJson<ApkReleaseInfo>(
-        `${API_BASE}/apk-release?_t=${Date.now()}`,
+        `${getApiBase()}/apk-release?_t=${Date.now()}`,
         {
           cache: 'no-store',
           headers: {
@@ -1497,7 +1609,7 @@ export const motorideApi = {
     // Sync to backend server
     try {
       const serverRes = await safeFetchJson<{ success: boolean; release: ApkReleaseInfo }>(
-        `${API_BASE}/admin/apk-release`,
+        `${getApiBase()}/admin/apk-release`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1549,7 +1661,7 @@ export const motorideApi = {
     // 3. Upload binary to backend server with progress tracking
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/admin/upload-apk-binary`, true);
+      xhr.open('POST', `${getApiBase()}/admin/upload-apk-binary`, true);
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
       xhr.setRequestHeader('x-filename', encodeURIComponent(name));
       xhr.setRequestHeader('x-version', encodeURIComponent(updated.version));
@@ -1631,7 +1743,7 @@ export const motorideApi = {
     realtimeSync.broadcast('APK_RELEASE_UPDATED', deletedApk);
 
     try {
-      await fetch(`${API_BASE}/admin/apk-binary`, { method: 'DELETE' });
+      await fetch(`${getApiBase()}/admin/apk-binary`, { method: 'DELETE' });
     } catch {}
 
     return deletedApk;
@@ -1657,7 +1769,7 @@ export const motorideApi = {
 
     // Try fetching binary from server
     try {
-      const res = await fetch(`${API_BASE}/download/apk`);
+      const res = await fetch(`${getApiBase()}/download/apk`);
       if (res.ok) {
         const blob = await res.blob();
         if (blob && blob.size > 0) {
@@ -1689,7 +1801,7 @@ export const motorideApi = {
       if (e?.message === 'NO_APK_FILE_UPLOADED') {
         alert('No APK package has been uploaded yet by the administrator. Please upload the real .apk file in the Admin Workspace.');
       } else {
-        window.location.href = `${API_BASE}/download/apk`;
+        window.location.href = `${getApiBase()}/download/apk`;
       }
     }
   },
@@ -1705,7 +1817,7 @@ export const motorideApi = {
 
     // 2. Synchronize with backend server
     try {
-      const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      const res = await fetch(`${getApiBase()}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail, password: cleanPass }),

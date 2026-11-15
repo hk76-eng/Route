@@ -897,11 +897,25 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       }
     });
 
-    // Cross-device sync responder: when Captain mounts and requests active rides, answer immediately
-    const unsubReqSync = realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
+    // Cross-device sync responder: when Captain mounts or MQTT connects, publish current live ride request immediately
+    const syncCurrentPendingRide = () => {
       const current = activeRideRef.current || activeRide;
-      if (current && (current.status === 'requested' || current.status === 'captain_offered' || current.status === 'captain_accepted' || current.status === 'captain_arrived')) {
+      if (
+        current &&
+        !cancelledRideIdsRef.current.has(current.id) &&
+        (current.status === 'requested' || current.status === 'captain_offered')
+      ) {
         realtimeSync.sendActiveRidesSync([current]);
+      }
+    };
+
+    const unsubReqSync = realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
+      syncCurrentPendingRide();
+    });
+
+    const unsubConnStatus = realtimeSync.on('CONNECTION_STATUS', (status: any) => {
+      if (status?.connected) {
+        syncCurrentPendingRide();
       }
     });
 
@@ -928,6 +942,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       unsubLocation();
       unsubOffer();
       unsubReqSync();
+      unsubConnStatus();
       clearInterval(pollTimer);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);

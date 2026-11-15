@@ -144,7 +144,8 @@ motorideRouter.get('/rides', (req: Request, res: Response) => {
     list = list.filter((r) => {
       if (r.status !== 'requested' && r.status !== 'captain_offered') return false;
       const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
-      return !isNaN(createdMs) && nowMs - createdMs <= 90 * 1000;
+      const diff = nowMs - createdMs;
+      return !isNaN(createdMs) && diff <= 180 * 1000 && diff >= -10 * 60 * 1000;
     });
   } else {
     if (status && typeof status === 'string' && status !== 'all') {
