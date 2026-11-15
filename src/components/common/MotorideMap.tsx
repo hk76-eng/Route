@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Navigation, Crosshair, Compass, Mountain, Moon, LocateFixed } from 'lucide-react';
+import { Navigation, Crosshair, Compass, Mountain, Moon, Satellite, LocateFixed } from 'lucide-react';
 import { calculateHaversineDistanceKm } from '../../utils/distanceCalculator';
 
-export type MapLayerType = 'google-street' | 'google-terrain' | 'voyager-dark';
+export type MapLayerType = 'google-street' | 'google-satellite' | 'google-terrain' | 'voyager-dark';
 
 interface MapLayerConfig {
   id: MapLayerType;
@@ -18,10 +18,19 @@ interface MapLayerConfig {
 const MAP_LAYERS: Record<MapLayerType, MapLayerConfig> = {
   'google-street': {
     id: 'google-street',
-    label: 'Google Street',
-    shortLabel: 'Street',
+    label: 'Google Streets',
+    shortLabel: 'Streets',
     tooltip: 'Google Maps Roadmaps & Street View (Default)',
     url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    subdomains: ['0', '1', '2', '3'],
+    maxZoom: 20,
+  },
+  'google-satellite': {
+    id: 'google-satellite',
+    label: 'Google Satellite',
+    shortLabel: 'Satellite',
+    tooltip: 'Google Maps Satellite Imagery',
+    url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
     subdomains: ['0', '1', '2', '3'],
     maxZoom: 20,
   },
@@ -37,7 +46,7 @@ const MAP_LAYERS: Record<MapLayerType, MapLayerConfig> = {
   'voyager-dark': {
     id: 'voyager-dark',
     label: 'Voyager Dark',
-    shortLabel: 'Voyager Dark',
+    shortLabel: 'Dark',
     tooltip: 'Voyager Dark Night Carto Style',
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     subdomains: ['a', 'b', 'c', 'd'],
@@ -160,6 +169,10 @@ export const MotorideMap: React.FC<MotorideMapProps> = ({
   const [activeLayer, setActiveLayer] = useState<MapLayerType>(initialLayer);
   const [isFollowingPassenger, setIsFollowingPassenger] = useState<boolean>(true);
   const [isFollowingCaptain, setIsFollowingCaptain] = useState<boolean>(true);
+
+  useEffect(() => {
+    setActiveLayer(initialLayer);
+  }, [initialLayer]);
 
   const handleSelectLayer = (layer: MapLayerType) => {
     setActiveLayer(layer);
@@ -1125,13 +1138,13 @@ export const MotorideMap: React.FC<MotorideMapProps> = ({
         <>
           {/* Top Left: Live Passenger GPS Status HUD & Nearest Captain (Hidden in Captain Mode) */}
           {!isCaptainMode && !showLocationsABOnly && (
-            <div className="absolute top-3 left-3 z-[400] flex flex-wrap items-center gap-2 max-w-[calc(100%-1.5rem)]">
+            <div className="absolute top-3 left-16 sm:left-20 z-[400] flex flex-wrap items-center gap-2 max-w-[calc(100%-5rem)]">
               {passengerLat && passengerLng && (
                 <button
                   type="button"
                   onClick={handleLocateMe}
                   title="Passenger Live Location GPS - Click to Recenter on My Location"
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950/90 text-white backdrop-blur-md border border-slate-700/90 shadow-xl text-xs font-semibold hover:border-blue-500/80 transition-all cursor-pointer active:scale-95"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950/90 text-white backdrop-blur-md border border-slate-700/90 shadow-xl text-xs font-semibold hover:border-blue-500/80 transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
                 >
                   <div className="relative flex items-center justify-center w-2.5 h-2.5">
                     <span className="absolute w-full h-full rounded-full bg-blue-400 animate-ping opacity-75" />
@@ -1149,7 +1162,7 @@ export const MotorideMap: React.FC<MotorideMapProps> = ({
                   type="button"
                   onClick={handleFocusNearestCaptain}
                   title={`Nearest Captain: ${nearestCaptain.name} (${nearestCaptain.distanceKm ? (nearestCaptain.distanceKm < 1 ? Math.round(nearestCaptain.distanceKm * 1000) + 'm' : nearestCaptain.distanceKm.toFixed(1) + ' km') : 'Nearby'}) - Click to view on map`}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950/95 text-white backdrop-blur-md border border-emerald-500/90 shadow-xl text-xs font-semibold hover:border-emerald-400 hover:bg-slate-900 transition-all cursor-pointer active:scale-95"
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-950/95 text-white backdrop-blur-md border border-emerald-500/90 shadow-xl text-xs font-semibold hover:border-emerald-400 hover:bg-slate-900 transition-all cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
                 >
                   <div className="relative flex items-center justify-center w-2.5 h-2.5">
                     <span className="absolute w-full h-full rounded-full bg-emerald-400 animate-ping opacity-75" />
@@ -1168,30 +1181,45 @@ export const MotorideMap: React.FC<MotorideMapProps> = ({
           )}
 
           {/* Top Right: Google Maps Layering Switcher, Navigator Controls & Recenter */}
-          <div className="absolute top-3 right-3 z-[400] flex items-center gap-2 max-w-[calc(100%-1.5rem)]">
+          <div className="absolute top-3 right-3 z-[400] flex items-center gap-2 max-w-[calc(100%-1.5rem)] flex-wrap justify-end">
             {/* Layer Quick Switcher (Hidden in Captain Dashboard) */}
             {!isCaptainMode && (
-              <div className="flex items-center p-1 rounded-2xl bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200/90 shadow-md">
+              <div className="flex items-center p-1 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md">
                 <button
                   type="button"
                   onClick={() => handleSelectLayer('google-street')}
-                  title="Google Street / Roadmaps (Default)"
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  title="Google Streets / Roadmap (Default)"
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeLayer === 'google-street'
                       ? 'bg-blue-600 text-white shadow-sm'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
                   <Compass className="w-3.5 h-3.5 text-current" />
-                  <span className="hidden sm:inline">Google Street</span>
-                  <span className="sm:hidden">Street</span>
+                  <span className="hidden sm:inline">Google Streets</span>
+                  <span className="sm:hidden">Streets</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectLayer('google-satellite')}
+                  title="Google Satellite Imagery"
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                    activeLayer === 'google-satellite'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Satellite className="w-3.5 h-3.5 text-current" />
+                  <span className="hidden sm:inline">Google Satellite</span>
+                  <span className="sm:hidden">Satellite</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleSelectLayer('google-terrain')}
                   title="Google Terrain (Topographic Relief)"
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeLayer === 'google-terrain'
                       ? 'bg-emerald-600 text-white shadow-sm'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -1206,7 +1234,7 @@ export const MotorideMap: React.FC<MotorideMapProps> = ({
                   type="button"
                   onClick={() => handleSelectLayer('voyager-dark')}
                   title="Voyager Dark Night Mode"
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     activeLayer === 'voyager-dark'
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'

@@ -145,5 +145,18 @@
   animation: text-flash-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes sound-wave-bar {
+  0%, 100% {
+    transform: scaleY(0.45);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1.15);
+    opacity: 1;
+  }
+}
 
-
+.animate-sound-bar {
+  animation: sound-wave-bar 0.8s ease-in-out infinite;
+  transform-origin: center;
+}

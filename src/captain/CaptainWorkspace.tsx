@@ -42,7 +42,6 @@ import {
   ArrowLeft,
   IndianRupee,
   History,
-  Volume2,
   Zap,
   Lock,
   Wallet,
@@ -206,9 +205,23 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const [dispatchIndex, setDispatchIndex] = useState<number>(0);
   const [countdownSeconds, setCountdownSeconds] = useState<number>(25);
   const currentDispatchRideIdRef = useRef<string | null>(null);
+  const [isSoundMuted, setIsSoundMuted] = useState<boolean>(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const cancelledRideIdsRef = useRef<Set<string>>(new Set());
 
-  // Active candidate rides for single Uber dispatch (excluding captain-declined rides)
-  const activeIncomingRides = availableRides.filter((r) => !declinedRideIds.has(r.id));
+  // Helper: Only treat newly created live requests (within 90s) as real-time incoming rides
+  const isFreshRealtimeRequest = (r: MotorideRide | null | undefined): boolean => {
+    if (!r || !r.id) return false;
+    if (cancelledRideIdsRef.current.has(r.id)) return false;
+    if (r.status !== 'requested' && r.status !== 'captain_offered') return false;
+    const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
+    return !isNaN(createdMs) && Date.now() - createdMs <= 90 * 1000;
+  };
+
+  // Active candidate rides for single Uber dispatch (only real-time passenger requests, excluding declined/cancelled)
+  const activeIncomingRides = availableRides.filter(
+    (r) => !declinedRideIds.has(r.id) && isFreshRealtimeRequest(r)
+  );
   const currentDispatchRide = activeIncomingRides.length > 0
     ? activeIncomingRides[dispatchIndex % activeIncomingRides.length]
     : null;
@@ -467,8 +480,26 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     loadSettings();
 
     // Listen to real-time events
+    const removeCancelledOrFinishedRide = (rideId: string, markCancelled: boolean = true) => {
+      if (!rideId) return;
+      if (markCancelled) {
+        cancelledRideIdsRef.current.add(rideId);
+      }
+      setAvailableRides((prev) => prev.filter((r) => r.id !== rideId));
+      setDeclinedRideIds((prev) => {
+        if (!prev.has(rideId)) return prev;
+        const next = new Set(prev);
+        next.delete(rideId);
+        return next;
+      });
+      setInspectedRide((prev) => (prev?.id === rideId ? null : prev));
+      setActiveRide((prev) => (prev?.id === rideId ? null : prev));
+    };
+
     const unsubRideCreated = realtimeSync.on('RIDE_CREATED', (newRide: MotorideRide) => {
       if (!newRide || !newRide.id) return;
+      if (cancelledRideIdsRef.current.has(newRide.id)) return;
+      if (newRide.status && newRide.status !== 'requested' && newRide.status !== 'captain_offered') return;
       motorideApi.cacheRide(newRide);
       // Clear ride ID from decline set so newly created ride always rings for captain
       setDeclinedRideIds((prev) => {
@@ -500,8 +531,16 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       if (!updatedRide || !updatedRide.id) return;
       motorideApi.cacheRide(updatedRide);
 
+      if (updatedRide.status && updatedRide.status.includes('cancelled')) {
+        removeCancelledOrFinishedRide(updatedRide.id, true);
+        if (updatedRide.captain_id === captainId) {
+          loadCaptainData();
+        }
+        return;
+      }
+
       if (updatedRide.captain_id === captainId) {
-        if (updatedRide.status === 'trip_completed' || updatedRide.status === 'completed' || updatedRide.status.includes('cancelled')) {
+        if (updatedRide.status === 'trip_completed' || updatedRide.status === 'completed') {
           setActiveRide(null);
           loadCaptainData();
         } else {
@@ -513,49 +552,46 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         if (updatedRide.status !== 'requested' && updatedRide.status !== 'captain_offered') {
           return prev.filter((r) => r.id !== updatedRide.id);
         }
+        if (cancelledRideIdsRef.current.has(updatedRide.id)) {
+          return prev.filter((r) => r.id !== updatedRide.id);
+        }
         return prev.map((r) => (r.id === updatedRide.id ? updatedRide : r));
       });
+    });
 
-      if (updatedRide.status.includes('cancelled')) {
-        setDeclinedRideIds((prev) => {
-          const next = new Set(prev);
-          next.delete(updatedRide.id);
-          return next;
-        });
-        setInspectedRide((prev) => (prev?.id === updatedRide.id ? null : prev));
+    const unsubRideStatusChanged = realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
+      const ride = payload?.ride;
+      const rideId = payload?.ride_id || ride?.id || ride?.$id;
+      const status = payload?.status || ride?.status;
+      if (!rideId || !status) return;
+      if (status.includes('cancelled')) {
+        removeCancelledOrFinishedRide(rideId, true);
+      } else if (status !== 'requested' && status !== 'captain_offered') {
+        removeCancelledOrFinishedRide(rideId, false);
       }
     });
 
     const unsubRideCancelled = realtimeSync.on('RIDE_CANCELLED', (payload: any) => {
-      const cancelledId = payload?.ride_id || payload?.ride?.id;
+      const cancelledId = payload?.ride_id || payload?.ride?.id || payload?.ride?.$id;
       if (cancelledId) {
-        setAvailableRides((prev) => prev.filter((r) => r.id !== cancelledId));
-        setDeclinedRideIds((prev) => {
-          const next = new Set(prev);
-          next.delete(cancelledId);
-          return next;
-        });
-        setInspectedRide((prev) => (prev?.id === cancelledId ? null : prev));
-        setActiveRide((prev) => (prev?.id === cancelledId ? null : prev));
+        removeCancelledOrFinishedRide(cancelledId, true);
       }
     });
 
     const unsubActiveSync = realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
       if (!Array.isArray(rides)) return;
-      const valid = rides.filter(
-        (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
-      );
+      const valid = rides.filter((r) => isFreshRealtimeRequest(r));
       if (valid.length > 0) {
         valid.forEach((r) => motorideApi.cacheRide(r));
         setAvailableRides((prev) => {
           const map = new Map<string, MotorideRide>();
           valid.forEach((r) => map.set(r.id, r));
           prev.forEach((r) => {
-            if (!map.has(r.id)) map.set(r.id, r);
+            if (!map.has(r.id) && isFreshRealtimeRequest(r)) {
+              map.set(r.id, r);
+            }
           });
-          return Array.from(map.values()).filter(
-            (r) => r.status === 'requested' || r.status === 'captain_offered'
-          );
+          return Array.from(map.values()).filter((r) => isFreshRealtimeRequest(r));
         });
       }
     });
@@ -599,6 +635,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     return () => {
       unsubRideCreated();
       unsubRideUpdated();
+      unsubRideStatusChanged();
       unsubRideCancelled();
       unsubActiveSync();
       unsubEarningsUpdated();
@@ -750,32 +787,92 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     } catch {}
   };
 
-  // Soft nice caller tune alert for incoming ride requests
-  const playIncomingCallTune = () => {
+  // Unlock shared Web Audio context on first user gesture so incoming chimes always play cleanly
+  useEffect(() => {
+    const unlockAudio = () => {
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+        if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+          audioCtxRef.current = new AudioContextClass();
+        }
+        if (audioCtxRef.current.state === 'suspended') {
+          audioCtxRef.current.resume().catch(() => {});
+        }
+      } catch {}
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('touchstart', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio, { passive: true });
+    window.addEventListener('click', unlockAudio, { passive: true });
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
+
+  // Sweet melodic crystal-marimba chime alert for incoming ride requests
+  const playIncomingCallTune = (forcePlay: boolean = false) => {
+    if (isSoundMuted && !forcePlay) return;
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
-      const ctx = new AudioContextClass();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
+
+      if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+        audioCtxRef.current = new AudioContextClass();
       }
-      
-      const notes = [523.25, 659.25, 783.99, 987.77, 1046.50]; // C5, E5, G5, B5, C6 soft marimba chime
-      notes.forEach((freq, idx) => {
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const now = ctx.currentTime;
+      // Sweet uplifting major-9th bell arpeggio: C5 -> E5 -> G5 -> B5 -> D6 -> E6, with gentle shimmer overtone
+      const chimeNotes = [
+        { freq: 523.25, delay: 0.0, dur: 0.45, vol: 0.14 },   // C5
+        { freq: 659.25, delay: 0.11, dur: 0.45, vol: 0.14 },  // E5
+        { freq: 783.99, delay: 0.22, dur: 0.50, vol: 0.15 },  // G5
+        { freq: 987.77, delay: 0.33, dur: 0.55, vol: 0.15 },  // B5
+        { freq: 1174.66, delay: 0.44, dur: 0.65, vol: 0.13 }, // D6
+        { freq: 1318.51, delay: 0.56, dur: 0.80, vol: 0.16 }, // E6
+      ];
+
+      chimeNotes.forEach(({ freq, delay, dur, vol }) => {
+        const start = now + delay;
+
+        // Warm fundamental sine tone
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.12);
-        
-        gain.gain.setValueAtTime(0, ctx.currentTime + idx * 0.12);
-        gain.gain.linearRampToValueAtTime(0.15, ctx.currentTime + idx * 0.12 + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + idx * 0.12 + 0.35);
-        
+        osc.frequency.setValueAtTime(freq, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.linearRampToValueAtTime(vol, start + 0.018);
+        gain.gain.exponentialRampToValueAtTime(0.0008, start + dur);
+
         osc.connect(gain);
         gain.connect(ctx.destination);
-        
-        osc.start(ctx.currentTime + idx * 0.12);
-        osc.stop(ctx.currentTime + idx * 0.12 + 0.4);
+        osc.start(start);
+        osc.stop(start + dur + 0.05);
+
+        // Soft 2nd-harmonic crystal sparkle overtone
+        const shimmerOsc = ctx.createOscillator();
+        const shimmerGain = ctx.createGain();
+        shimmerOsc.type = 'triangle';
+        shimmerOsc.frequency.setValueAtTime(freq * 2, start);
+
+        shimmerGain.gain.setValueAtTime(0.0001, start);
+        shimmerGain.gain.linearRampToValueAtTime(vol * 0.22, start + 0.015);
+        shimmerGain.gain.exponentialRampToValueAtTime(0.0005, start + dur * 0.65);
+
+        shimmerOsc.connect(shimmerGain);
+        shimmerGain.connect(ctx.destination);
+        shimmerOsc.start(start);
+        shimmerOsc.stop(start + dur + 0.05);
       });
     } catch (e) {
       console.warn('Audio playback notice:', e);
@@ -783,20 +880,13 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   };
 
   const prevRideIdsRef = useRef<Set<string>>(new Set());
-  const isInitializedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!isOnline) {
-      isInitializedRef.current = false;
       prevRideIdsRef.current = new Set();
       return;
     }
     const currentIds = new Set(availableRides.map(r => r.id));
-    if (!isInitializedRef.current) {
-      prevRideIdsRef.current = currentIds;
-      isInitializedRef.current = true;
-      return;
-    }
 
     let hasNew = false;
     for (const id of currentIds) {
@@ -805,11 +895,23 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
         break;
       }
     }
-    if (hasNew) {
+    if (hasNew && !activeRide) {
       playIncomingCallTune();
     }
     prevRideIdsRef.current = currentIds;
-  }, [availableRides, isOnline]);
+  }, [availableRides, isOnline, activeRide, isSoundMuted]);
+
+  // Repeat sweet sound alert gently every 4.2s while an incoming ride card is actively waiting
+  useEffect(() => {
+    if (!isOnline || activeRide || !currentDispatchRide || isSoundMuted) {
+      return;
+    }
+    const repeatInterval = setInterval(() => {
+      playIncomingCallTune();
+    }, 4200);
+
+    return () => clearInterval(repeatInterval);
+  }, [currentDispatchRide?.id, isOnline, activeRide, isSoundMuted]);
 
   const loadAvailableRides = async () => {
     try {
@@ -819,9 +921,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
       }
       const list = await motorideApi.getRides({ active_for_captain: true });
       if (Array.isArray(list)) {
-        const realRides = list.filter(
-          (r) => r && r.id && (r.status === 'requested' || r.status === 'captain_offered')
-        );
+        const realRides = list.filter((r) => isFreshRealtimeRequest(r));
         realRides.forEach((r) => motorideApi.cacheRide(r));
         setAvailableRides(realRides);
       } else {
@@ -1560,11 +1660,9 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
           </div>
 
           <div className="p-4 sm:p-5 flex flex-col gap-3.5">
-
-
-            {/* Top Bar: Uber Service Tag + Queue Info + SVG Circular Countdown Dial */}
+            {/* Top Bar: Service Tag + Queue Info + Sound Alert Toggle + Circular Countdown Dial */}
             <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-black flex items-center gap-1.5 text-white">
                   <span>{service.icon}</span>
                   <span>{service.label}</span>

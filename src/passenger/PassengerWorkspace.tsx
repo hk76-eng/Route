@@ -7,7 +7,10 @@ import {
   FareSettings,
   DEFAULT_MOTORIDE_FARE_SETTINGS,
 } from '../types/motoride';
-import { MotorideMap, AvailableCaptainItem } from '../components/common/MotorideMap';
+import { AvailableCaptainItem } from '../components/common/MotorideMap';
+import { PassengerGoogleMap } from '../components/passenger/PassengerGoogleMap';
+import { LocationPickerGoogleMapModal } from '../components/passenger/LocationPickerGoogleMapModal';
+import { GoogleMapLayerType } from '../utils/googleMapsConfig';
 import { RideChatModal } from '../components/common/RideChatModal';
 import { PassengerProfileDrawer } from './PassengerProfileDrawer';
 import { DigitalWatchETA } from './DigitalWatchETA';
@@ -52,7 +55,6 @@ import {
   Loader2,
   ArrowLeft,
   History,
-  Calculator,
   Lock,
 } from 'lucide-react';
 
@@ -97,6 +99,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isRideHistoryOpen, setIsRideHistoryOpen] = useState<boolean>(false);
   const [showChatModal, setShowChatModal] = useState<boolean>(false);
+  const [activeMapLayer, setActiveMapLayer] = useState<GoogleMapLayerType>('google-street');
+  const [mapPickerMode, setMapPickerMode] = useState<'pickup' | 'dropoff' | null>(null);
 
   // Booking Form State - Initialized with default preset location
   const [pickup, setPickup] = useState<{
@@ -393,9 +397,6 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     } catch {}
     return DEFAULT_MOTORIDE_FARE_SETTINGS;
   });
-
-  // Dedicated Fare Calculating Breakdown Tab Visibility
-  const [showFareBreakdown, setShowFareBreakdown] = useState<boolean>(false);
 
   // Trip Completed Rating State
   const [ratingScore, setRatingScore] = useState(5);
@@ -1400,13 +1401,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
     const currentCaptainHeading = animatedCaptainPos?.heading ?? activeRide?.captain_heading ?? 45;
 
     return (
-      <MotorideMap
+      <PassengerGoogleMap
         passengerLat={passengerGps.lat}
         passengerLng={passengerGps.lng}
         passengerAccuracy={passengerGps.accuracy}
-        passengerHeading={passengerGps.heading}
         passengerName="Standing Here"
-        showPassengerOnly={false}
         nearbyCaptains={activeRide ? [] : nearbyCaptains}
         nearestCaptain={activeRide ? null : nearestCaptain}
         showLocationsABOnly={Boolean(activeRide)}
@@ -1425,10 +1424,12 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
         activeRideStatus={activeRide?.status}
         bottomSheetPadding={activeRide ? (isCardMinimized ? 90 : 380) : 180}
         interactive={!activeRide}
+        activeLayer={activeMapLayer}
+        onLayerChange={setActiveMapLayer}
+        showOverlayControls={true}
         onSetPickupToPassengerLocation={(lat, lng) => handleSetPickupFromPassengerPosition(lat, lng)}
         onMapClick={(lat, lng) => {
           if (activeRide) return;
-          // If clicking map during booking, update pickup if empty, otherwise dropoff
           if (!pickup.name) {
             setPickup({
               name: `Pinned Pickup (${lat.toFixed(3)}, ${lng.toFixed(3)})`,
@@ -1436,11 +1437,15 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               lng,
             });
           } else {
+            const label = `Pinned Destination (${lat.toFixed(3)}, ${lng.toFixed(3)})`;
             setDropoff({
-              name: `Pinned Destination (${lat.toFixed(3)}, ${lng.toFixed(3)})`,
+              name: label,
               lat,
               lng,
             });
+            setDropoffInputText(label);
+            setDropoffMode('manual');
+            setShowDropoffSuggestions(false);
           }
         }}
         className={`w-full h-full ${isFullBackground ? 'rounded-none border-0' : 'shadow-2xl border border-slate-800'}`}
@@ -2107,7 +2112,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                         setPickup(found);
                       }
                     }}
-                    className="w-full pl-9 pr-16 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black font-semibold focus:outline-none focus:ring-2 focus:ring-black appearance-none cursor-pointer hover:bg-slate-100 transition-colors shadow-xs"
+                    className="w-full pl-9 pr-24 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black font-semibold focus:outline-none focus:ring-2 focus:ring-black appearance-none cursor-pointer hover:bg-slate-100 transition-colors shadow-xs"
                   >
                     <option value="" disabled className="bg-white text-slate-500">
                       📍 Select Pickup Location
@@ -2126,8 +2131,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                   </select>
                   <MapPin className="w-4 h-4 text-black absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none stroke-[2.5]" />
                   
-                  {/* Right Corner: Clear Cross Sign & Dropdown Indicator */}
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 z-10">
+                  {/* Right Corner: Clear Cross Sign, Dropdown Indicator & Google Map Modal Trigger */}
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
                     {pickup.name ? (
                       <button
                         type="button"
@@ -2144,6 +2149,19 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                       </button>
                     ) : null}
                     <ChevronDown className="w-4 h-4 text-black pointer-events-none stroke-[2.5]" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPickupSuggestions(false);
+                        setMapPickerMode('pickup');
+                      }}
+                      title="Select Pickup Location on Google Map"
+                      aria-label="Open Google Map for Pickup Location"
+                      className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-black/20 transition-all cursor-pointer flex items-center justify-center active:scale-95 shadow-xs"
+                    >
+                      <MapIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -2155,11 +2173,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                       onChange={(e) => handleManualPickupChange(e.target.value)}
                       onFocus={() => setShowPickupSuggestions(true)}
                       placeholder="Type custom pickup location or landmark..."
-                      className="w-full pl-9 pr-16 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black placeholder-slate-500 font-semibold focus:outline-none focus:ring-2 focus:ring-black shadow-xs"
+                      className="w-full pl-9 pr-24 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black placeholder-slate-500 font-semibold focus:outline-none focus:ring-2 focus:ring-black shadow-xs"
                     />
                     <MapPin className="w-4 h-4 text-black absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none stroke-[2.5]" />
 
-                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 z-10">
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
                       {isSearchingPickup && (
                         <Loader2 className="w-3.5 h-3.5 text-black animate-spin" />
                       )}
@@ -2177,6 +2195,18 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                           <X className="w-3.5 h-3.5 stroke-[2.5]" />
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowPickupSuggestions(false);
+                          setMapPickerMode('pickup');
+                        }}
+                        title="Select Pickup Location on Google Map"
+                        aria-label="Open Google Map for Pickup Location"
+                        className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white border border-black/20 transition-all cursor-pointer flex items-center justify-center active:scale-95 shadow-xs"
+                      >
+                        <MapIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
                     </div>
                   </div>
 
@@ -2253,7 +2283,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                       const found = PRESET_LOCATIONS.find((l) => l.name === val);
                       if (found) setDropoff(found);
                     }}
-                    className="w-full pl-9 pr-16 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black font-semibold focus:outline-none focus:ring-2 focus:ring-black appearance-none cursor-pointer hover:bg-slate-100 transition-colors shadow-xs"
+                    className="w-full pl-9 pr-24 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black font-semibold focus:outline-none focus:ring-2 focus:ring-black appearance-none cursor-pointer hover:bg-slate-100 transition-colors shadow-xs"
                   >
                     <option value="" disabled className="bg-white text-slate-500">
                       Select Dropoff Location
@@ -2269,8 +2299,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                   </select>
                   <Navigation className="w-4 h-4 text-black absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none stroke-[2.5]" />
 
-                  {/* Right Corner: Clear Cross Sign & Dropdown Indicator */}
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 z-10">
+                  {/* Right Corner: Clear Cross Sign, Dropdown Indicator & Google Map Modal Trigger */}
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
                     {dropoff.name ? (
                       <button
                         type="button"
@@ -2287,6 +2317,19 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                       </button>
                     ) : null}
                     <ChevronDown className="w-4 h-4 text-black pointer-events-none stroke-[2.5]" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDropoffSuggestions(false);
+                        setMapPickerMode('dropoff');
+                      }}
+                      title="Select Drop-off Location on Google Map"
+                      aria-label="Open Google Map for Drop-off Location"
+                      className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white border border-black/20 transition-all cursor-pointer flex items-center justify-center active:scale-95 shadow-xs"
+                    >
+                      <MapIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -2298,11 +2341,11 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                       onChange={(e) => handleManualDropoffChange(e.target.value)}
                       onFocus={() => setShowDropoffSuggestions(true)}
                       placeholder="Type custom drop-off destination or landmark..."
-                      className="w-full pl-9 pr-16 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black placeholder-slate-500 font-semibold focus:outline-none focus:ring-2 focus:ring-black shadow-xs"
+                      className="w-full pl-9 pr-24 py-2.5 rounded-xl bg-slate-50 border border-black text-xs text-black placeholder-slate-500 font-semibold focus:outline-none focus:ring-2 focus:ring-black shadow-xs"
                     />
                     <Navigation className="w-4 h-4 text-black absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none stroke-[2.5]" />
 
-                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5 z-10">
+                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
                       {isSearchingDropoff && (
                         <Loader2 className="w-3.5 h-3.5 text-black animate-spin" />
                       )}
@@ -2320,6 +2363,18 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                           <X className="w-3.5 h-3.5 stroke-[2.5]" />
                         </button>
                       ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDropoffSuggestions(false);
+                          setMapPickerMode('dropoff');
+                        }}
+                        title="Select Drop-off Location on Google Map"
+                        aria-label="Open Google Map for Drop-off Location"
+                        className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white border border-black/20 transition-all cursor-pointer flex items-center justify-center active:scale-95 shadow-xs"
+                      >
+                        <MapIcon className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
                     </div>
                   </div>
 
@@ -2349,70 +2404,6 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
 
             {/* Fare & Payment Control Card */}
             <div className="p-3.5 sm:p-4 rounded-2xl bg-slate-50 border border-black flex flex-col gap-3 shadow-xs">
-              {/* Fare Calculation & Breakdown Tab Button */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-black shadow-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-black text-white flex items-center justify-center shrink-0">
-                    <Calculator className="w-4 h-4 stroke-[2.5]" />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-black text-black block leading-none">
-                      Fare Calculation Tab
-                    </span>
-                    <span className="text-[10px] text-slate-600 font-semibold">
-                      {distanceKm} km • ~{durationMin} min • Est: ₹{estimatedFare}
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowFareBreakdown((prev) => !prev)}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-black text-[11px] font-bold border border-black flex items-center gap-1 cursor-pointer transition-colors shrink-0"
-                >
-                  <span>{showFareBreakdown ? 'Hide Breakdown' : 'View Breakdown'}</span>
-                  {showFareBreakdown ? <ChevronUp className="w-3.5 h-3.5 stroke-[2.5]" /> : <ChevronDown className="w-3.5 h-3.5 stroke-[2.5]" />}
-                </button>
-              </div>
-
-              {/* Collapsible Fare Calculation Breakdown Details */}
-              {showFareBreakdown && (
-                <div className="p-3 rounded-xl bg-white border border-black space-y-1.5 text-xs animate-in fade-in slide-in-from-top-1 duration-150">
-                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 text-slate-700 font-semibold text-[11px]">
-                    <span>Service:</span>
-                    <span className="font-bold text-black">{calculationDetails.serviceName}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
-                    <span>Base Starting Fare:</span>
-                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.baseFare}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
-                    <span>Distance Charge ({calculationDetails.distanceKm} km @ ₹{calculationDetails.perKmRate}/km):</span>
-                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.distanceCharge}</span>
-                  </div>
-                  {calculationDetails.multiplier > 1.0 && (
-                    <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
-                      <span>Vehicle Multiplier:</span>
-                      <span className="font-bold text-black font-mono-num">{calculationDetails.multiplier}x</span>
-                    </div>
-                  )}
-                  {calculationDetails.handlingFee > 0 && (
-                    <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
-                      <span>Parcel Handling Fee:</span>
-                      <span className="font-bold text-black font-mono-num">₹{calculationDetails.handlingFee}</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-slate-700 font-medium text-[11px]">
-                    <span>Minimum Fare Floor:</span>
-                    <span className="font-bold text-black font-mono-num">₹{calculationDetails.minimumFare}</span>
-                  </div>
-                  <div className="flex items-center justify-between pt-1.5 border-t border-black font-black text-black text-xs">
-                    <span>Calculated Standard Fare:</span>
-                    <span className="text-sm font-mono-num text-black font-black">₹{estimatedFare}</span>
-                  </div>
-                </div>
-              )}
-
               {/* Fare Stepper: (-) Fare ₹ 0 (+) comment box icon */}
               <div className="flex items-center gap-2">
                 <button
@@ -2702,8 +2693,8 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   );
 
   return (
-    <div className="relative w-full h-[calc(100dvh-64px)] sm:h-[calc(100vh-68px)] overflow-hidden bg-slate-100">
-      {/* Background Map in Street View filling 100% of the canvas */}
+    <div className="relative flex-1 w-full h-[calc(100dvh-64px)] sm:h-[calc(100vh-68px)] min-h-[calc(100dvh-64px)] overflow-hidden bg-slate-100">
+      {/* Full-Bleed Google Map spanning 100% of the main page canvas edge-to-edge */}
       <div className="absolute inset-0 w-full h-full z-0">
         {renderMap(true)}
       </div>
@@ -2853,6 +2844,55 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
             />
           </div>
         </div>
+      )}
+      {/* Google Map Modal for Picking Pickup (A) or Drop-off (B) Location */}
+      {mapPickerMode && (
+        <LocationPickerGoogleMapModal
+          isOpen={true}
+          mode={mapPickerMode}
+          initialLat={
+            mapPickerMode === 'pickup'
+              ? pickup.lat || passengerGps.lat
+              : dropoff.lat || pickup.lat || passengerGps.lat
+          }
+          initialLng={
+            mapPickerMode === 'pickup'
+              ? pickup.lng || passengerGps.lng
+              : dropoff.lng || pickup.lng || passengerGps.lng
+          }
+          initialAddress={mapPickerMode === 'pickup' ? pickup.name : dropoff.name}
+          otherPoint={
+            mapPickerMode === 'pickup'
+              ? dropoff.name
+                ? { lat: dropoff.lat, lng: dropoff.lng, address: dropoff.name }
+                : null
+              : pickup.name
+              ? { lat: pickup.lat, lng: pickup.lng, address: pickup.name }
+              : null
+          }
+          passengerGps={{ lat: passengerGps.lat, lng: passengerGps.lng }}
+          activeLayer={activeMapLayer}
+          onLayerChange={setActiveMapLayer}
+          onClose={() => setMapPickerMode(null)}
+          onConfirm={(loc) => {
+            if (mapPickerMode === 'pickup') {
+              setPickup(loc);
+              setPickupInputText(loc.name);
+              setShowPickupSuggestions(false);
+              if (!PRESET_LOCATIONS.some((p) => p.name === loc.name)) {
+                setPickupMode('manual');
+              }
+            } else {
+              setDropoff(loc);
+              setDropoffInputText(loc.name);
+              setShowDropoffSuggestions(false);
+              if (!PRESET_LOCATIONS.some((p) => p.name === loc.name)) {
+                setDropoffMode('manual');
+              }
+            }
+            setMapPickerMode(null);
+          }}
+        />
       )}
     </div>
   );

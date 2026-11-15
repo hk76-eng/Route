@@ -25,9 +25,16 @@ export function PassengerApp() {
   });
   const [isWalletOpen, setIsWalletOpen] = useState<boolean>(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
+  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false);
 
   useEffect(() => {
     document.title = 'Route — Passenger App';
+  }, []);
+
+  useEffect(() => {
+    const onQuota = () => setQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', onQuota);
+    return () => window.removeEventListener('gmp-quota-exceeded', onQuota);
   }, []);
 
   const handleAuthenticated = (user: AuthUser) => {
@@ -72,7 +79,17 @@ export function PassengerApp() {
         onOpenWallet={() => setIsWalletOpen(true)}
       />
 
-      <main className="flex-1 w-full relative">
+      {quotaExceeded && (
+        <div
+          role="alert"
+          className="sticky top-0 z-50 border-b border-amber-500/40 bg-amber-950/90 px-4 py-2.5 text-sm text-amber-100 backdrop-blur"
+        >
+          Daily request limit reached for the AI Studio demo Google Maps key (100 req/day).
+          Add your own key in the Maps setup panel to continue.
+        </div>
+      )}
+
+      <main className="flex-1 w-full relative flex flex-col">
         <PassengerWorkspace
           currentPassengerId={currentUser.id}
           passengerName={currentUser.name}

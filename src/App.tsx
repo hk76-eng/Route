@@ -38,6 +38,13 @@ export default function App() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState<boolean>(false);
   const [unreadNotifications, setUnreadNotifications] = useState<number>(0);
   const [showTestingGuide, setShowTestingGuide] = useState<boolean>(true);
+  const [quotaExceeded, setQuotaExceeded] = useState<boolean>(false);
+
+  useEffect(() => {
+    const onQuota = () => setQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', onQuota);
+    return () => window.removeEventListener('gmp-quota-exceeded', onQuota);
+  }, []);
 
   // Keep active role synced in safe storage without reverting user selection
   useEffect(() => {
@@ -106,8 +113,18 @@ export default function App() {
         onToggleCaptainOnline={handleToggleCaptainOnline}
       />
 
+      {quotaExceeded && (
+        <div
+          role="alert"
+          className="sticky top-0 z-50 border-b border-amber-500/40 bg-amber-950/90 px-4 py-2.5 text-sm text-amber-100 backdrop-blur"
+        >
+          Daily request limit reached for the AI Studio demo Google Maps key (100 req/day).
+          Add your own key in the Maps setup panel to continue.
+        </div>
+      )}
+
       {/* Main Workspace Render (Gated - Accessible only after authentication) */}
-      <main className="flex-1 w-full relative">
+      <main className="flex-1 w-full relative flex flex-col">
         {currentRole === 'passenger' && (
           <PassengerWorkspace
             currentPassengerId={currentUser.id}

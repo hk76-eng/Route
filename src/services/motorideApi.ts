@@ -12,11 +12,42 @@ import {
   RideOffer,
   PassengerLiveLocation,
 } from '../types/motoride';
-import { getAppwriteDatabases, isAppwriteConfigured, appwriteDatabaseId, Permission, Role } from '../lib/appwrite';
+import { getAppwriteDatabases, isAppwriteConfigured, appwriteDatabaseId, Permission, Role, Query } from '../lib/appwrite';
 import { safeStorage } from '../lib/safeStorage';
 import { appwriteAuth } from '../lib/appwriteAuth';
 import { realtimeSync } from './realtimeSync';
 import { saveApkBlobToIndexedDb, getApkBlobFromIndexedDb, deleteApkBlobFromIndexedDb } from '../lib/apkStorage';
+
+const STATUS_PROGRESSION: Record<string, number> = {
+  requested: 1,
+  captain_offered: 2,
+  captain_accepted: 3,
+  captain_arrived: 4,
+  trip_started: 5,
+  trip_completed: 6,
+  completed: 6,
+  cancelled_by_passenger: 7,
+  cancelled_by_captain: 7,
+};
+
+function mergeRideWithProgression(existing: Partial<MotorideRide> | undefined, incoming: Partial<MotorideRide>): MotorideRide {
+  const base = existing || {};
+  const existingRank = existing?.status ? (STATUS_PROGRESSION[existing.status] || 0) : 0;
+  const incomingRank = incoming?.status ? (STATUS_PROGRESSION[incoming.status] || 0) : 0;
+  const effectiveStatus = (existingRank > incomingRank ? existing!.status : incoming.status || existing?.status || 'requested') as MotorideRideStatus;
+
+  return {
+    ...base,
+    ...incoming,
+    status: effectiveStatus,
+    offers: incoming.offers && incoming.offers.length > 0 ? incoming.offers : (base.offers || []),
+    captain_name: incoming.captain_name || base.captain_name,
+    captain_phone: incoming.captain_phone || base.captain_phone,
+    vehicle_model: incoming.vehicle_model || base.vehicle_model,
+    plate_number: incoming.plate_number || base.plate_number,
+    captain_avatar: (incoming as any).captain_avatar || (base as any).captain_avatar,
+  } as MotorideRide;
+}
 
 const API_BASE = '/api/motoride';
 
@@ -134,15 +165,20 @@ async function safeAppwriteUpdateDocument(
 const localRidesStore: Map<string, MotorideRide> = new Map();
 const localMessagesStore: Map<string, any[]> = new Map();
 
-// Initialize from safeStorage if available
+// Initialize from safeStorage if available (do not resurrect old/previous pending ride requests)
 try {
   const saved = safeStorage.getItem('motoride_active_rides_cache');
   if (saved) {
     const parsed = JSON.parse(saved);
     if (Array.isArray(parsed)) {
+      const nowMs = Date.now();
       parsed.forEach((r: MotorideRide) => {
         if (r && r.id) {
-          localRidesStore.set(r.id, r);
+          const isPending = r.status === 'requested' || r.status === 'captain_offered';
+          const ageMs = r.created_at ? nowMs - new Date(r.created_at).getTime() : Infinity;
+          if (!isPending || (!isNaN(ageMs) && ageMs <= 60 * 1000)) {
+            localRidesStore.set(r.id, r);
+          }
         }
       });
     }
@@ -183,16 +219,16 @@ realtimeSync.on('RIDE_CREATED', (ride: MotorideRide) => {
 
 realtimeSync.on('RIDE_UPDATED', (ride: MotorideRide) => {
   if (ride && ride.id) {
-    const existing = localRidesStore.get(ride.id) || {};
-    localRidesStore.set(ride.id, { ...existing, ...ride });
+    const existing = localRidesStore.get(ride.id);
+    localRidesStore.set(ride.id, mergeRideWithProgression(existing, ride));
     saveLocalRides();
   }
 });
 
 realtimeSync.on('RIDE_ACCEPTED', (ride: MotorideRide) => {
   if (ride && ride.id) {
-    const existing = localRidesStore.get(ride.id) || ({} as Partial<MotorideRide>);
-    localRidesStore.set(ride.id, { ...existing, ...ride, status: 'captain_accepted' } as MotorideRide);
+    const existing = localRidesStore.get(ride.id);
+    localRidesStore.set(ride.id, mergeRideWithProgression(existing, { ...ride, status: 'captain_accepted' }));
     saveLocalRides();
   }
 });
@@ -201,15 +237,17 @@ realtimeSync.on('CAPTAIN_ARRIVED', (payload: any) => {
   const ride = payload?.ride;
   const rideId = payload?.ride_id || ride?.id || ride?.$id;
   if (rideId) {
-    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
-    localRidesStore.set(rideId, {
-      ...existing,
-      ...(ride || {}),
-      id: rideId,
-      status: 'captain_arrived',
-      captain_current_lat: ride?.pickup_lat || existing.pickup_lat || ride?.captain_current_lat || existing.captain_current_lat,
-      captain_current_lng: ride?.pickup_lng || existing.pickup_lng || ride?.captain_current_lng || existing.captain_current_lng,
-    } as MotorideRide);
+    const existing = localRidesStore.get(rideId);
+    localRidesStore.set(
+      rideId,
+      mergeRideWithProgression(existing, {
+        ...(ride || {}),
+        id: rideId,
+        status: 'captain_arrived',
+        captain_current_lat: ride?.pickup_lat || existing?.pickup_lat || ride?.captain_current_lat || existing?.captain_current_lat,
+        captain_current_lng: ride?.pickup_lng || existing?.pickup_lng || ride?.captain_current_lng || existing?.captain_current_lng,
+      })
+    );
     saveLocalRides();
   }
 });
@@ -219,13 +257,15 @@ realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
   const rideId = payload?.ride_id || ride?.id || ride?.$id;
   const status = payload?.status || ride?.status;
   if (rideId && status) {
-    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
-    localRidesStore.set(rideId, {
-      ...existing,
-      ...(ride || {}),
-      id: rideId,
-      status,
-    } as MotorideRide);
+    const existing = localRidesStore.get(rideId);
+    localRidesStore.set(
+      rideId,
+      mergeRideWithProgression(existing, {
+        ...(ride || {}),
+        id: rideId,
+        status,
+      })
+    );
     saveLocalRides();
   }
 });
@@ -233,15 +273,17 @@ realtimeSync.on('RIDE_STATUS_CHANGED', (payload: any) => {
 realtimeSync.on('RIDE_CANCELLED', (payload: any) => {
   const ride = payload?.ride;
   const rideId = payload?.ride_id || ride?.id || ride?.$id;
-  const status = ride?.status || 'cancelled_by_captain';
+  const status = ride?.status || payload?.status || 'cancelled_by_passenger';
   if (rideId) {
-    const existing = localRidesStore.get(rideId) || ({} as Partial<MotorideRide>);
-    localRidesStore.set(rideId, {
-      ...existing,
-      ...(ride || {}),
-      id: rideId,
-      status,
-    } as MotorideRide);
+    const existing = localRidesStore.get(rideId);
+    localRidesStore.set(
+      rideId,
+      mergeRideWithProgression(existing, {
+        ...(ride || {}),
+        id: rideId,
+        status,
+      })
+    );
     saveLocalRides();
   }
 });
@@ -250,12 +292,12 @@ realtimeSync.on('RIDE_OFFER_RECEIVED', (payload: any) => {
   const ride = payload?.ride;
   const offer = payload?.offer;
   if (ride && ride.id) {
-    const existing = localRidesStore.get(ride.id) || ({} as Partial<MotorideRide>);
-    const existingOffers = existing.offers || [];
+    const existing = localRidesStore.get(ride.id);
+    const existingOffers = existing?.offers || [];
     const updatedOffers = offer && !existingOffers.some((o: any) => o.id === offer.id)
       ? [...existingOffers, offer]
       : (ride.offers || existingOffers);
-    localRidesStore.set(ride.id, { ...existing, ...ride, offers: updatedOffers } as MotorideRide);
+    localRidesStore.set(ride.id, mergeRideWithProgression(existing, { ...ride, offers: updatedOffers }));
     saveLocalRides();
   }
 });
@@ -263,7 +305,10 @@ realtimeSync.on('RIDE_OFFER_RECEIVED', (payload: any) => {
 realtimeSync.on('ACTIVE_RIDES_SYNC_RECEIVED', (rides: MotorideRide[]) => {
   if (Array.isArray(rides)) {
     rides.forEach((r) => {
-      if (r && r.id) localRidesStore.set(r.id, r);
+      if (r && r.id) {
+        const existing = localRidesStore.get(r.id);
+        localRidesStore.set(r.id, mergeRideWithProgression(existing, r));
+      }
     });
     saveLocalRides();
   }
@@ -358,8 +403,10 @@ export const motorideApi = {
     if (Array.isArray(json?.rides)) {
       json.rides.forEach((r) => {
         if (r && r.id) {
-          map.set(r.id, r);
-          localRidesStore.set(r.id, r);
+          const existing = localRidesStore.get(r.id) || map.get(r.id);
+          const merged = mergeRideWithProgression(existing, r);
+          map.set(r.id, merged);
+          localRidesStore.set(r.id, merged);
         }
       });
       saveLocalRides();
@@ -369,7 +416,15 @@ export const motorideApi = {
     const databases = getAppwriteDatabases();
     if (databases && isAppwriteConfigured()) {
       try {
-        const res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch(() => null);
+        let res = await databases
+          .listDocuments(appwriteDatabaseId, 'rides', [
+            Query.orderDesc('$createdAt'),
+            Query.limit(100),
+          ])
+          .catch(() => null);
+        if (!res) {
+          res = await databases.listDocuments(appwriteDatabaseId, 'rides').catch(() => null);
+        }
         if (res?.documents && Array.isArray(res.documents)) {
           (res.documents as unknown as any[]).forEach((doc) => {
             if (doc && (doc.id || doc.$id)) {
@@ -386,39 +441,8 @@ export const motorideApi = {
                 offers: Array.isArray(parsedOffers) ? parsedOffers : [],
               } as MotorideRide;
 
-              const existing = localRidesStore.get(rideId) || map.get(rideId) || ({} as MotorideRide);
-              
-              const STATUS_PROGRESSION: Record<string, number> = {
-                requested: 1,
-                captain_offered: 2,
-                captain_accepted: 3,
-                captain_arrived: 4,
-                trip_started: 5,
-                trip_completed: 6,
-                completed: 6,
-                cancelled_by_passenger: 7,
-                cancelled_by_captain: 7,
-              };
-
-              // Prevent stale doc from reverting forward status transitions (e.g. captain_arrived reverting to captain_accepted)
-              let effectiveStatus = rideFromDoc.status;
-              const existingRank = (STATUS_PROGRESSION as any)[existing.status] || 0;
-              const docRank = (STATUS_PROGRESSION as any)[rideFromDoc.status] || 0;
-              if (existingRank > docRank) {
-                effectiveStatus = existing.status;
-              }
-
-              const merged: MotorideRide = {
-                ...existing,
-                ...rideFromDoc,
-                status: effectiveStatus,
-                offers: rideFromDoc.offers && rideFromDoc.offers.length > 0 ? rideFromDoc.offers : (existing.offers || []),
-                captain_name: rideFromDoc.captain_name || existing.captain_name,
-                captain_phone: rideFromDoc.captain_phone || existing.captain_phone,
-                vehicle_model: rideFromDoc.vehicle_model || existing.vehicle_model,
-                plate_number: rideFromDoc.plate_number || existing.plate_number,
-                captain_avatar: (rideFromDoc as any).captain_avatar || (existing as any).captain_avatar,
-              };
+              const existing = localRidesStore.get(rideId) || map.get(rideId);
+              const merged = mergeRideWithProgression(existing, rideFromDoc);
               map.set(rideId, merged);
               localRidesStore.set(rideId, merged);
             }
@@ -432,13 +456,16 @@ export const motorideApi = {
 
     let result = Array.from(map.values());
 
-    // Apply strict filtering to ensure precision
+    // Apply strict filtering to ensure precision (only live real-time requests for captain feed)
     if (params?.active_for_captain) {
-      result = result.filter(
-        (r) =>
-          r &&
-          (r.status === 'requested' || r.status === 'captain_offered')
-      );
+      const nowMs = Date.now();
+      result = result.filter((r) => {
+        if (!r || (r.status !== 'requested' && r.status !== 'captain_offered')) {
+          return false;
+        }
+        const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
+        return !isNaN(createdMs) && nowMs - createdMs <= 90 * 1000;
+      });
     } else {
       if (params?.status && params.status !== 'all') {
         result = result.filter((r) => r && r.status === params.status);
@@ -785,21 +812,25 @@ export const motorideApi = {
         updatePayload.fare_amount = extra.final_fare;
       }
     }
-    await safeAppwriteUpdateDocument('rides', rideId, updatePayload);
+    await Promise.allSettled([
+      safeAppwriteUpdateDocument('rides', rideId, updatePayload),
+      safeFetchJson<{ ride: MotorideRide }>(
+        `${API_BASE}/rides/${rideId}/status`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status, ...extra }),
+        },
+        { ride: updatedRide }
+      ),
+    ]);
 
-    safeFetchJson<{ ride: MotorideRide }>(
-      `${API_BASE}/rides/${rideId}/status`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, ...extra }),
-      },
-      { ride: updatedRide }
-    ).catch(() => {});
-
-    // Redundant broadcast to guarantee instant passenger UI update
+    // Redundant broadcast to guarantee instant UI update
     if (status === 'captain_arrived') {
       realtimeSync.broadcast('CAPTAIN_ARRIVED', { ride_id: rideId, ride: updatedRide, status: 'captain_arrived' });
+    }
+    if (status.includes('cancelled')) {
+      realtimeSync.broadcast('RIDE_CANCELLED', { ride_id: rideId, ride: updatedRide });
     }
     realtimeSync.broadcast('RIDE_STATUS_CHANGED', { ride: updatedRide, status });
     realtimeSync.broadcast('RIDE_UPDATED', updatedRide);

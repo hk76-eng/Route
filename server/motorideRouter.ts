@@ -139,8 +139,13 @@ motorideRouter.get('/rides', (req: Request, res: Response) => {
     );
 
   if (active_for_captain === 'true') {
-    // Return rides available for captain feed: 'requested' or 'captain_offered'
-    list = list.filter((r) => r.status === 'requested' || r.status === 'captain_offered');
+    // Return only real-time passenger ride requests created recently (not old/stale requests)
+    const nowMs = Date.now();
+    list = list.filter((r) => {
+      if (r.status !== 'requested' && r.status !== 'captain_offered') return false;
+      const createdMs = r.created_at ? new Date(r.created_at).getTime() : 0;
+      return !isNaN(createdMs) && nowMs - createdMs <= 90 * 1000;
+    });
   } else {
     if (status && typeof status === 'string' && status !== 'all') {
       list = list.filter((r) => r.status === status);
@@ -560,12 +565,14 @@ motorideRouter.post('/rides/:id/status', (req: Request, res: Response) => {
       cancellation_reason?: string;
     };
     if (status && (status === 'cancelled_by_passenger' || status === 'cancelled_by_captain')) {
-      const stubRide = {
+      const stubRide: any = {
         id: req.params.id,
         status,
         cancellation_reason: cancellation_reason || 'Cancelled by user',
         updated_at: new Date().toISOString(),
       };
+      ridesStore.set(req.params.id, stubRide);
+      broadcastEvent('RIDE_CANCELLED', { ride_id: req.params.id, ride: stubRide });
       broadcastEvent('RIDE_STATUS_CHANGED', { ride: stubRide, status });
       broadcastEvent('RIDE_UPDATED', stubRide);
       return res.json({ success: true, ride: stubRide });
@@ -674,6 +681,9 @@ motorideRouter.post('/rides/:id/status', (req: Request, res: Response) => {
 
   if (status === 'captain_arrived') {
     broadcastEvent('CAPTAIN_ARRIVED', { ride_id: ride.id, ride, status: 'captain_arrived' });
+  }
+  if (status.includes('cancelled')) {
+    broadcastEvent('RIDE_CANCELLED', { ride_id: ride.id, ride });
   }
   broadcastEvent('RIDE_STATUS_CHANGED', { ride, status });
   broadcastEvent('RIDE_UPDATED', ride);

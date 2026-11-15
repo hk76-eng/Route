@@ -1,5 +1,5 @@
-import { Client, Account, Databases, Realtime, Storage, Permission, Role } from 'appwrite';
-export { Permission, Role };
+import { Client, Account, Databases, Realtime, Storage, Permission, Role, Query } from 'appwrite';
+export { Permission, Role, Query };
 
 export const DEFAULT_APPWRITE_ENDPOINT = 'https://fra.cloud.appwrite.io/v1';
 export const DEFAULT_APPWRITE_PROJECT_ID = '6ad0ec20000c3632117b';
