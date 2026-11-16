@@ -178,16 +178,18 @@ motorideRouter.get('/rides/:id/messages', (req: Request, res: Response) => {
 });
 
 motorideRouter.post('/rides/:id/messages', (req: Request, res: Response) => {
-  const { sender_id, sender_role, sender_name, message } = req.body;
+  const { id, sender_id, sender_role, sender_name, message, created_at } = req.body;
   if (!message || !sender_id || !sender_role) {
     return res.status(400).json({ error: 'Missing required message parameters' });
   }
   const newMsg = addRideMessage({
+    id,
     ride_id: req.params.id,
     sender_id,
     sender_role,
     sender_name: sender_name || (sender_role === 'captain' ? 'Captain' : 'Passenger'),
     message,
+    created_at,
   });
   res.status(201).json({ success: true, message: newMsg });
 });

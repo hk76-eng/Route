@@ -1464,7 +1464,11 @@ export const motorideApi = {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          id: newMsg.id,
+          created_at: newMsg.created_at,
+        }),
       },
       { message: newMsg }
     ).catch(() => {});

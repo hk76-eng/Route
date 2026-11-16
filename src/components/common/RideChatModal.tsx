@@ -10,6 +10,7 @@ interface RideChatModalProps {
   currentUserRole: 'passenger' | 'captain';
   currentUserName: string;
   onClose?: () => void;
+  onMessagesViewed?: (messageIds: string[]) => void;
 }
 
 export const RideChatModal: React.FC<RideChatModalProps> = ({
@@ -18,6 +19,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
   currentUserRole,
   currentUserName,
   onClose,
+  onMessagesViewed,
 }) => {
   const [messages, setMessages] = useState<RideMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -46,10 +48,22 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
         'Please wait 2 mins',
       ];
 
+  const dedupeMessages = (list: RideMessage[]): RideMessage[] => {
+    const map = new Map<string, RideMessage>();
+    list.forEach((m, idx) => {
+      if (!m) return;
+      const key = m.id || `tmp_${m.created_at}_${idx}`;
+      if (!map.has(key)) {
+        map.set(key, m);
+      }
+    });
+    return Array.from(map.values());
+  };
+
   const fetchMessages = async () => {
     try {
       const list = await motorideApi.getRideMessages(ride.id);
-      setMessages(list);
+      setMessages(dedupeMessages(list));
     } catch (err) {
       console.warn('Failed to load chat messages:', err);
     }
@@ -62,8 +76,8 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
     const unsub = realtimeSync.on('RIDE_MESSAGE_RECEIVED', (payload: RideMessage) => {
       if (payload && payload.ride_id === ride.id) {
         setMessages((prev) => {
-          if (prev.some((m) => m.id === payload.id)) return prev;
-          return [...prev, payload];
+          if (payload.id && prev.some((m) => m.id === payload.id)) return prev;
+          return dedupeMessages([...prev, payload]);
         });
       }
     });
@@ -76,7 +90,13 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (onMessagesViewed && messages.length > 0) {
+      const ids = messages.map((m) => m.id).filter(Boolean);
+      if (ids.length > 0) {
+        onMessagesViewed(ids);
+      }
+    }
+  }, [messages, onMessagesViewed]);
 
   // Focus input on load
   useEffect(() => {
@@ -97,8 +117,11 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
         sender_name: currentUserName,
         message: text,
       });
-      if (sent && !messages.some((m) => m.id === sent.id)) {
-        setMessages((prev) => [...prev, sent]);
+      if (sent) {
+        setMessages((prev) => {
+          if (sent.id && prev.some((m) => m.id === sent.id)) return prev;
+          return dedupeMessages([...prev, sent]);
+        });
       }
     } catch (err) {
       console.warn('Failed to send message:', err);
@@ -173,7 +196,7 @@ export const RideChatModal: React.FC<RideChatModalProps> = ({
             
             return (
               <div
-                key={`${m.id || index}-${m.created_at}`}
+                key={m.id || `msg-${index}-${m.created_at}`}
                 className={`flex flex-col max-w-[85%] sm:max-w-[70%] ${isMe ? 'self-end items-end' : 'self-start items-start'} animate-in fade-in slide-in-from-bottom-1 duration-150`}
               >
                 <div className="flex items-center gap-1.5 px-1 mb-1 text-[10px] text-slate-400">

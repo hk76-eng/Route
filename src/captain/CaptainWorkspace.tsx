@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Captain,
   MotorideRide,
@@ -12,6 +12,7 @@ import { CaptainPassengerRatingModal } from './CaptainPassengerRatingModal';
 import { motorideApi } from '../services/motorideApi';
 import { realtimeSync } from '../services/realtimeSync';
 import { calculateBearingDegrees } from '../utils/distanceCalculator';
+import { initChatAudioUnlock, markChatMessageChimed, playSweetChatAlert } from '../utils/chatSound';
 import { appwriteAuth as supabaseAuth, AuthUser } from '../lib/appwriteAuth';
 import { safeStorage } from '../lib/safeStorage';
 import { CaptainProfileDrawer } from './CaptainProfileDrawer';
@@ -169,6 +170,123 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isRideHistoryOpen, setIsRideHistoryOpen] = useState<boolean>(false);
   const [showChatModal, setShowChatModal] = useState<boolean>(false);
+  const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  const showChatModalRef = useRef<boolean>(false);
+  const seenChatMsgIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    showChatModalRef.current = showChatModal;
+  }, [showChatModal]);
+
+  const handleChatMessagesViewed = useCallback((ids: string[]) => {
+    ids.forEach((id) => {
+      if (id) seenChatMsgIdsRef.current.add(id);
+    });
+    setHasUnreadChat(false);
+  }, []);
+
+  const openChatModal = () => {
+    setShowChatModal(true);
+    setHasUnreadChat(false);
+    if (activeRide?.id) {
+      motorideApi
+        .getRideMessages(activeRide.id)
+        .then((list) => {
+          list.forEach((m) => {
+            if (m?.id) seenChatMsgIdsRef.current.add(m.id);
+          });
+        })
+        .catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    return initChatAudioUnlock();
+  }, []);
+
+  useEffect(() => {
+    const rideId = activeRide?.id;
+    const isConfirmedRide =
+      !!rideId &&
+      (activeRide?.status === 'captain_accepted' ||
+        activeRide?.status === 'captain_arrived' ||
+        activeRide?.status === 'trip_started');
+
+    if (!isConfirmedRide || !rideId) {
+      seenChatMsgIdsRef.current.clear();
+      setHasUnreadChat(false);
+      return;
+    }
+
+    let isInitialSync = true;
+
+    const syncUnreadMessages = async () => {
+      try {
+        const list = await motorideApi.getRideMessages(rideId);
+        let foundUnread = false;
+        const nowMs = Date.now();
+        list.forEach((m) => {
+          if (!m?.id) return;
+          if (m.sender_role === 'captain') {
+            seenChatMsgIdsRef.current.add(m.id);
+            markChatMessageChimed(m.id);
+            return;
+          }
+          if (m.sender_role === 'passenger') {
+            const msgAgeMs = m.created_at ? nowMs - new Date(m.created_at).getTime() : Infinity;
+            if (isInitialSync && !isNaN(msgAgeMs) && msgAgeMs > 15000) {
+              markChatMessageChimed(m.id);
+            } else if (!seenChatMsgIdsRef.current.has(m.id)) {
+              playSweetChatAlert(m.id);
+            }
+
+            if (showChatModalRef.current) {
+              seenChatMsgIdsRef.current.add(m.id);
+            } else if (!seenChatMsgIdsRef.current.has(m.id)) {
+              foundUnread = true;
+            }
+          }
+        });
+        isInitialSync = false;
+        if (foundUnread && !showChatModalRef.current) {
+          setHasUnreadChat(true);
+        }
+      } catch {}
+    };
+
+    syncUnreadMessages();
+
+    const unsub = realtimeSync.on('RIDE_MESSAGE_RECEIVED', (msg: any) => {
+      if (!msg || msg.ride_id !== rideId) return;
+      if (msg.sender_role === 'captain') {
+        if (msg.id) {
+          seenChatMsgIdsRef.current.add(msg.id);
+          markChatMessageChimed(msg.id);
+        }
+        return;
+      }
+      if (msg.sender_role === 'passenger') {
+        playSweetChatAlert(msg.id);
+        if (showChatModalRef.current) {
+          if (msg.id) seenChatMsgIdsRef.current.add(msg.id);
+          setHasUnreadChat(false);
+        } else if (!msg.id || !seenChatMsgIdsRef.current.has(msg.id)) {
+          setHasUnreadChat(true);
+        }
+      }
+    });
+
+    const interval = setInterval(syncUnreadMessages, 4000);
+    window.addEventListener('focus', syncUnreadMessages);
+    window.addEventListener('online', syncUnreadMessages);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+      window.removeEventListener('focus', syncUnreadMessages);
+      window.removeEventListener('online', syncUnreadMessages);
+    };
+  }, [activeRide?.id, activeRide?.status]);
   const [showPassengerRatingModal, setShowPassengerRatingModal] = useState<boolean>(false);
   const [completedRideForRating, setCompletedRideForRating] = useState<MotorideRide | null>(null);
   const [isFinishingRide, setIsFinishingRide] = useState<boolean>(false);
@@ -1486,11 +1604,21 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowChatModal(true)}
-                className="p-2.5 rounded-xl bg-black text-white border border-slate-800 hover:bg-slate-900 shadow-sm transition-all active:scale-95 cursor-pointer"
-                title="Chat with Passenger"
+                onClick={openChatModal}
+                className="relative p-2.5 rounded-xl bg-black text-white border border-slate-800 hover:bg-slate-900 shadow-sm transition-all active:scale-95 cursor-pointer"
+                title={hasUnreadChat ? 'New message from Passenger' : 'Chat with Passenger'}
+                aria-label={hasUnreadChat ? 'Chat with Passenger (new message)' : 'Chat with Passenger'}
               >
                 <MessageSquare className="w-4 h-4 stroke-[2.5] text-white" />
+                {hasUnreadChat && (
+                  <span
+                    aria-label="New chat message"
+                    className="absolute -top-1 -right-1 flex h-3 w-3"
+                  >
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 ring-2 ring-white" />
+                  </span>
+                )}
               </button>
               <a
                 href={`tel:${activeRide.passenger_phone || '+919780012345'}`}
@@ -2212,25 +2340,6 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
                   </>
                 )}
               </button>
-
-              {/* Right: Quick Chat / Call icons */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowChatModal(true)}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all cursor-pointer"
-                  title="Chat with Passenger"
-                >
-                  <MessageSquare className="w-3.5 h-3.5 text-white" />
-                </button>
-                <a
-                  href={`tel:${activeRide.passenger_phone || '+919780012345'}`}
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/10 transition-all cursor-pointer"
-                  title="Call Passenger"
-                >
-                  <Phone className="w-3.5 h-3.5 text-white" />
-                </a>
-              </div>
             </div>
 
             {/* Full 100% Scrollable Passenger Ride Details Content */}
@@ -2329,6 +2438,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
               currentUserRole="captain"
               currentUserName={captain?.full_name || 'Captain'}
               onClose={() => setShowChatModal(false)}
+              onMessagesViewed={handleChatMessagesViewed}
             />
           </div>
         </div>

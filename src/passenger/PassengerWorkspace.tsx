@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   MotorideRide,
   MotorideRideStatus,
@@ -17,6 +17,7 @@ import { DigitalWatchETA } from './DigitalWatchETA';
 import { motorideApi } from '../services/motorideApi';
 import { realtimeSync } from '../services/realtimeSync';
 import { calculateBearingDegrees } from '../utils/distanceCalculator';
+import { initChatAudioUnlock, markChatMessageChimed, playSweetChatAlert } from '../utils/chatSound';
 import { safeStorage } from '../lib/safeStorage';
 import {
   MapPin,
@@ -99,6 +100,123 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   const [isProfileOpen, setIsProfileOpen] = useState<boolean>(false);
   const [isRideHistoryOpen, setIsRideHistoryOpen] = useState<boolean>(false);
   const [showChatModal, setShowChatModal] = useState<boolean>(false);
+  const [hasUnreadChat, setHasUnreadChat] = useState<boolean>(false);
+  const showChatModalRef = useRef<boolean>(false);
+  const seenChatMsgIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    showChatModalRef.current = showChatModal;
+  }, [showChatModal]);
+
+  const handleChatMessagesViewed = useCallback((ids: string[]) => {
+    ids.forEach((id) => {
+      if (id) seenChatMsgIdsRef.current.add(id);
+    });
+    setHasUnreadChat(false);
+  }, []);
+
+  const openChatModal = () => {
+    setShowChatModal(true);
+    setHasUnreadChat(false);
+    if (activeRide?.id) {
+      motorideApi
+        .getRideMessages(activeRide.id)
+        .then((list) => {
+          list.forEach((m) => {
+            if (m?.id) seenChatMsgIdsRef.current.add(m.id);
+          });
+        })
+        .catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    return initChatAudioUnlock();
+  }, []);
+
+  useEffect(() => {
+    const rideId = activeRide?.id;
+    const isConfirmedRide =
+      !!rideId &&
+      (activeRide?.status === 'captain_accepted' ||
+        activeRide?.status === 'captain_arrived' ||
+        activeRide?.status === 'trip_started');
+
+    if (!isConfirmedRide || !rideId) {
+      seenChatMsgIdsRef.current.clear();
+      setHasUnreadChat(false);
+      return;
+    }
+
+    let isInitialSync = true;
+
+    const syncUnreadMessages = async () => {
+      try {
+        const list = await motorideApi.getRideMessages(rideId);
+        let foundUnread = false;
+        const nowMs = Date.now();
+        list.forEach((m) => {
+          if (!m?.id) return;
+          if (m.sender_role === 'passenger') {
+            seenChatMsgIdsRef.current.add(m.id);
+            markChatMessageChimed(m.id);
+            return;
+          }
+          if (m.sender_role === 'captain') {
+            const msgAgeMs = m.created_at ? nowMs - new Date(m.created_at).getTime() : Infinity;
+            if (isInitialSync && !isNaN(msgAgeMs) && msgAgeMs > 15000) {
+              markChatMessageChimed(m.id);
+            } else if (!seenChatMsgIdsRef.current.has(m.id)) {
+              playSweetChatAlert(m.id);
+            }
+
+            if (showChatModalRef.current) {
+              seenChatMsgIdsRef.current.add(m.id);
+            } else if (!seenChatMsgIdsRef.current.has(m.id)) {
+              foundUnread = true;
+            }
+          }
+        });
+        isInitialSync = false;
+        if (foundUnread && !showChatModalRef.current) {
+          setHasUnreadChat(true);
+        }
+      } catch {}
+    };
+
+    syncUnreadMessages();
+
+    const unsub = realtimeSync.on('RIDE_MESSAGE_RECEIVED', (msg: any) => {
+      if (!msg || msg.ride_id !== rideId) return;
+      if (msg.sender_role === 'passenger') {
+        if (msg.id) {
+          seenChatMsgIdsRef.current.add(msg.id);
+          markChatMessageChimed(msg.id);
+        }
+        return;
+      }
+      if (msg.sender_role === 'captain') {
+        playSweetChatAlert(msg.id);
+        if (showChatModalRef.current) {
+          if (msg.id) seenChatMsgIdsRef.current.add(msg.id);
+          setHasUnreadChat(false);
+        } else if (!msg.id || !seenChatMsgIdsRef.current.has(msg.id)) {
+          setHasUnreadChat(true);
+        }
+      }
+    });
+
+    const interval = setInterval(syncUnreadMessages, 4000);
+    window.addEventListener('focus', syncUnreadMessages);
+    window.addEventListener('online', syncUnreadMessages);
+
+    return () => {
+      unsub();
+      clearInterval(interval);
+      window.removeEventListener('focus', syncUnreadMessages);
+      window.removeEventListener('online', syncUnreadMessages);
+    };
+  }, [activeRide?.id, activeRide?.status]);
   const [activeMapLayer, setActiveMapLayer] = useState<GoogleMapLayerType>('google-street');
   const [mapPickerMode, setMapPickerMode] = useState<'pickup' | 'dropoff' | null>(null);
 
@@ -1854,11 +1972,21 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setShowChatModal(true)}
-                      className="p-3 rounded-2xl bg-slate-100 text-black border border-black hover:bg-slate-200 shadow-sm transition-all active:scale-95 cursor-pointer"
-                      title="Chat with Captain"
+                      onClick={openChatModal}
+                      className="relative p-3 rounded-2xl bg-slate-100 text-black border border-black hover:bg-slate-200 shadow-sm transition-all active:scale-95 cursor-pointer"
+                      title={hasUnreadChat ? 'New message from Captain' : 'Chat with Captain'}
+                      aria-label={hasUnreadChat ? 'Chat with Captain (new message)' : 'Chat with Captain'}
                     >
                       <MessageSquare className="w-4 h-4 stroke-[2.5]" />
+                      {hasUnreadChat && (
+                        <span
+                          aria-label="New chat message"
+                          className="absolute -top-1 -right-1 flex h-3 w-3"
+                        >
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 ring-2 ring-white" />
+                        </span>
+                      )}
                     </button>
                     {(activeRide.captain_phone || safeStorage.getItem('motoride_captain_phone')) && (
                       <a
@@ -2814,20 +2942,50 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               </div>
             </div>
 
-            {/* Dropdown / Pull-up Expand Button */}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsCardMinimized(false);
-                setActiveTab(activeRide ? 'flow' : 'book');
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer transition-all shrink-0"
-              title={activeRide ? 'Expand Active Ride Details' : 'Open booking form'}
-            >
-              <span>{activeRide ? 'Expand Ride' : 'Book Ride'}</span>
-              <ChevronUp className="w-4 h-4 stroke-[3]" />
-            </button>
+            {/* Quick Chat Button (when confirmed ride is minimized) + Expand Button */}
+            <div className="flex items-center gap-2 shrink-0">
+              {activeRide &&
+                (activeRide.status === 'captain_accepted' ||
+                  activeRide.status === 'captain_arrived' ||
+                  activeRide.status === 'trip_started') && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openChatModal();
+                    }}
+                    className="relative p-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/15 active:scale-95 cursor-pointer transition-all"
+                    title={hasUnreadChat ? 'New message from Captain' : 'Chat with Captain'}
+                    aria-label={hasUnreadChat ? 'Chat with Captain (new message)' : 'Chat with Captain'}
+                  >
+                    <MessageSquare className="w-4 h-4 stroke-[2.5]" />
+                    {hasUnreadChat && (
+                      <span
+                        aria-label="New chat message"
+                        className="absolute -top-1 -right-1 flex h-2.5 w-2.5"
+                      >
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 ring-2 ring-slate-950" />
+                      </span>
+                    )}
+                  </button>
+                )}
+
+              {/* Dropdown / Pull-up Expand Button */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCardMinimized(false);
+                  setActiveTab(activeRide ? 'flow' : 'book');
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer transition-all shrink-0"
+                title={activeRide ? 'Expand Active Ride Details' : 'Open booking form'}
+              >
+                <span>{activeRide ? 'Expand Ride' : 'Book Ride'}</span>
+                <ChevronUp className="w-4 h-4 stroke-[3]" />
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -2856,6 +3014,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
               currentUserRole="passenger"
               currentUserName={passengerName}
               onClose={() => setShowChatModal(false)}
+              onMessagesViewed={handleChatMessagesViewed}
             />
           </div>
         </div>

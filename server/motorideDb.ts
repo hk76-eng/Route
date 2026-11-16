@@ -646,25 +646,29 @@ export function getPassengerLocation(rideId?: string, passengerId?: string) {
 export const messagesStore = new Map<string, RideMessage[]>();
 
 export function addRideMessage(data: {
+  id?: string;
   ride_id: string;
   sender_id: string;
   sender_role: 'passenger' | 'captain';
   sender_name: string;
   message: string;
+  created_at?: string;
 }): RideMessage {
   const msg: RideMessage = {
-    id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    id: data.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     ride_id: data.ride_id,
     sender_id: data.sender_id,
     sender_role: data.sender_role,
     sender_name: data.sender_name,
     message: data.message,
-    created_at: new Date().toISOString(),
+    created_at: data.created_at || new Date().toISOString(),
   };
 
   const list = messagesStore.get(data.ride_id) || [];
-  list.push(msg);
-  messagesStore.set(data.ride_id, list);
+  if (!list.some((m) => m.id === msg.id)) {
+    list.push(msg);
+    messagesStore.set(data.ride_id, list);
+  }
 
   broadcastEvent('RIDE_MESSAGE_RECEIVED', msg);
   return msg;
