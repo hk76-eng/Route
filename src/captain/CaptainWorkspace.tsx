@@ -206,6 +206,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   const [countdownSeconds, setCountdownSeconds] = useState<number>(25);
   const currentDispatchRideIdRef = useRef<string | null>(null);
   const [isSoundMuted, setIsSoundMuted] = useState<boolean>(false);
+  const [soundPulseSeq, setSoundPulseSeq] = useState<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const cancelledRideIdsRef = useRef<Set<string>>(new Set());
 
@@ -828,6 +829,7 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
   // Sweet melodic crystal-marimba chime alert for incoming ride requests
   const playIncomingCallTune = (forcePlay: boolean = false) => {
     if (isSoundMuted && !forcePlay) return;
+    setSoundPulseSeq((prev) => prev + 1);
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioContextClass) return;
@@ -1653,46 +1655,34 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     const pickupEtaMins = Math.max(1, Math.round(distKm * 2.5));
     const tripEtaMins = ride.duration_minutes || Math.max(5, Math.round(tripDistKm * 3));
 
-    // Circular SVG timer math (radius 16, circumference ~100.5)
-    const radius = 16;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference * (1 - Math.max(0, countdownSeconds) / 25);
-    const timerColor = countdownSeconds > 10 ? '#10b981' : countdownSeconds > 5 ? '#f59e0b' : '#f43f5e';
-
     return (
       <div className="fixed sm:absolute bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-[1000] w-[95%] sm:w-[500px] max-w-lg transition-all duration-300">
-        <div className="relative bg-slate-950/98 backdrop-blur-2xl text-white rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] border border-slate-800 ring-1 ring-white/10 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
-          {/* Uber Acceptance Countdown Progress Bar at top edge */}
-          <div className="w-full h-1.5 bg-slate-900 overflow-hidden">
+        <div className="relative bg-white text-black rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.35)] border border-black/15 overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+          {/* Acceptance Countdown Progress Bar at top edge */}
+          <div className="w-full h-1.5 bg-black/10 overflow-hidden">
             <div
-              className={`h-full transition-all duration-1000 ease-linear ${
-                countdownSeconds > 10
-                  ? 'bg-emerald-400'
-                  : countdownSeconds > 5
-                  ? 'bg-amber-400'
-                  : 'bg-rose-500'
-              }`}
+              className="h-full bg-black transition-all duration-1000 ease-linear"
               style={{ width: `${(Math.max(0, countdownSeconds) / 25) * 100}%` }}
             />
           </div>
 
           <div className="p-4 sm:p-5 flex flex-col gap-3.5">
-            {/* Top Bar: Service Tag + Queue Info + Sound Alert Toggle + Circular Countdown Dial */}
-            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80">
+            {/* Top Bar: Service Tag + Queue Info + Cross Decline */}
+            <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-black/15">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="px-2.5 py-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-black flex items-center gap-1.5 text-white">
+                <span className="px-2.5 py-1 rounded-xl bg-white border border-black/20 text-xs font-black flex items-center gap-1.5 text-black">
                   <span>{service.icon}</span>
                   <span>{service.label}</span>
                 </span>
                 {activeIncomingRides.length > 1 && (
-                  <div className="flex items-center gap-1 text-[11px] font-bold text-slate-400 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-lg">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-black bg-white border border-black/20 px-2 py-0.5 rounded-lg">
                     <span>
                       {(dispatchIndex % activeIncomingRides.length) + 1} of {activeIncomingRides.length}
                     </span>
                     <button
                       type="button"
                       onClick={handleNextDispatchRide}
-                      className="ml-1 text-emerald-400 hover:text-emerald-300 font-black flex items-center cursor-pointer"
+                      className="ml-1 text-black hover:text-black/70 font-black flex items-center cursor-pointer"
                       title="Next ride request"
                     >
                       <span>Next</span>
@@ -1702,36 +1692,17 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
                 )}
               </div>
 
-              {/* Uber Circular Countdown Timer Dial */}
-              <div
-                className="relative w-9 h-9 flex items-center justify-center shrink-0"
-                title={`${countdownSeconds} seconds to accept`}
-              >
-                <svg className="w-9 h-9 -rotate-90">
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r={radius}
-                    className="stroke-slate-800"
-                    strokeWidth="3"
-                    fill="transparent"
-                  />
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r={radius}
-                    stroke={timerColor}
-                    strokeWidth="3"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={strokeDashoffset}
-                    strokeLinecap="round"
-                    fill="transparent"
-                    className="transition-all duration-1000 ease-linear"
-                  />
-                </svg>
-                <span className="absolute font-mono-num font-black text-[11px] text-white">
-                  {countdownSeconds}s
-                </span>
+              {/* Right Side: Top-Right Cross Decline Button */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleDeclineRide(ride.id)}
+                  className="w-9 h-9 rounded-full bg-white hover:bg-black/5 active:scale-95 text-black border border-black/25 hover:border-black flex items-center justify-center transition-all cursor-pointer shadow-sm"
+                  aria-label="Decline Ride"
+                  title="Decline Ride"
+                >
+                  <X className="w-4 h-4 stroke-[2.75]" />
+                </button>
               </div>
             </div>
 
@@ -1739,33 +1710,33 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-4xl sm:text-5xl font-black text-white font-mono-num tracking-tight">
+                  <span className="text-4xl sm:text-5xl font-black text-black font-mono-num tracking-tight">
                     ₹{ride.offered_fare}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 font-medium">
+                <div className="flex items-center gap-2 text-xs text-black/75 mt-0.5 font-medium">
                   <span>Trip Fare</span>
                   <span>•</span>
-                  <span className="font-bold text-amber-400 uppercase tracking-wide">
+                  <span className="font-bold text-black uppercase tracking-wide">
                     {ride.payment_method === 'cash' ? '💵 Cash' : '⚡ UPI / Online'}
                   </span>
                 </div>
               </div>
 
               {/* Passenger Avatar & Rating Card */}
-              <div className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-800 px-3 py-2 rounded-2xl">
+              <div className="flex items-center gap-2.5 bg-white border border-black/20 px-3 py-2 rounded-2xl">
                 <div className="relative shrink-0">
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-400 via-amber-500 to-amber-600 text-slate-950 font-black text-xs flex items-center justify-center shadow-xs">
+                  <div className="w-9 h-9 rounded-full bg-white border-2 border-black text-black font-black text-xs flex items-center justify-center shadow-xs">
                     {ride.passenger_name?.charAt(0)?.toUpperCase() || 'P'}
                   </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-950" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-black rounded-full border-2 border-white" />
                 </div>
                 <div className="text-left min-w-0">
-                  <span className="text-xs font-bold text-white block truncate max-w-[100px]">
+                  <span className="text-xs font-bold text-black block truncate max-w-[100px]">
                     {ride.passenger_name}
                   </span>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-400">
-                    <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold text-black">
+                    <Star className="w-2.5 h-2.5 fill-black text-black" />
                     4.9
                   </span>
                 </div>
@@ -1773,21 +1744,21 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             </div>
 
             {/* Uber-Style Trip Route Box (Vertical Connected Path) */}
-            <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col gap-2.5 text-xs">
+            <div className="p-3.5 rounded-2xl bg-white border border-black/15 flex flex-col gap-2.5 text-xs">
               {/* Pickup (A) */}
               <div className="flex items-start gap-2.5">
                 <div className="flex flex-col items-center mt-0.5">
-                  <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] flex items-center justify-center shrink-0 shadow-xs">
+                  <span className="w-5 h-5 rounded-full bg-white border-2 border-black text-black font-black text-[10px] flex items-center justify-center shrink-0 shadow-xs">
                     A
                   </span>
-                  <div className="w-0.5 h-5 bg-slate-700 my-0.5" />
+                  <div className="w-0.5 h-5 bg-black/25 my-0.5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-[11px]">
-                    <Navigation className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <div className="flex items-center gap-1.5 text-black font-bold text-[11px]">
+                    <Navigation className="w-3 h-3 text-black shrink-0" />
                     <span>{pickupDistText} away (~{pickupEtaMins} min)</span>
                   </div>
-                  <p className="text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 mt-0.5">
+                  <p className="text-xs sm:text-sm font-bold text-black leading-snug line-clamp-2 mt-0.5">
                     {ride.pickup_address}
                   </p>
                 </div>
@@ -1795,50 +1766,103 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
 
               {/* Dropoff (B) */}
               <div className="flex items-start gap-2.5 pt-1">
-                <span className="w-5 h-5 rounded-full bg-rose-500 text-white font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <span className="w-5 h-5 rounded-full bg-white border-2 border-black text-black font-black text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                   B
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] text-slate-400 font-semibold">
+                  <div className="text-[11px] text-black/75 font-semibold">
                     <span>{tripDistText} trip (~{tripEtaMins} min)</span>
                   </div>
-                  <p className="text-xs sm:text-sm font-semibold text-slate-200 leading-snug line-clamp-2 mt-0.5">
+                  <p className="text-xs sm:text-sm font-semibold text-black leading-snug line-clamp-2 mt-0.5">
                     {ride.dropoff_address}
                   </p>
                 </div>
               </div>
 
               {ride.comment && (
-                <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5 text-slate-300 text-[11px] italic">
-                  <MessageSquare className="w-3 h-3 text-slate-400 shrink-0" />
+                <div className="pt-2 border-t border-black/15 flex items-center gap-1.5 text-black text-[11px] italic">
+                  <MessageSquare className="w-3 h-3 text-black shrink-0" />
                   <span className="truncate">"{ride.comment}"</span>
                 </div>
               )}
             </div>
 
-            {/* Only Two Tabs: Accept or Decline */}
-            <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-800/80" role="group" aria-label="Ride response options">
-              {/* Accept Tab */}
-              <button
-                type="button"
-                onClick={() => handleAcceptRide(ride)}
-                className="py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 active:scale-[0.98] text-slate-950 font-black text-sm sm:text-base shadow-[0_0_22px_rgba(16,185,129,0.35)] flex items-center justify-center gap-2 transition-all cursor-pointer border border-emerald-300"
-                aria-label="Accept Ride"
-              >
-                <CheckCircle2 className="w-5 h-5 text-slate-950 stroke-[3]" />
-                <span className="tracking-wide">Accept</span>
-              </button>
+            {/* Single Blue Confirm Tab with White Text, Right-to-Left Timer Masking & Coordinated Blue Pulse Waves */}
+            <div className="pt-2 border-t border-black/15" role="group" aria-label="Ride confirmation">
+              {(() => {
+                const elapsedMaskPct = Math.min(
+                  100,
+                  Math.max(0, ((25 - Math.max(0, countdownSeconds)) / 25) * 100)
+                );
+                return (
+                  <div className="relative w-full overflow-visible">
+                    {/* Timer-synchronized blue pulse wave (pulses every 1s with countdown timer) */}
+                    <span
+                      key={`timer-wave-${ride.id}-${countdownSeconds}`}
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 rounded-2xl border-2 border-blue-400/75 shadow-[0_0_16px_rgba(59,130,246,0.55)] animate-confirm-timer-wave"
+                    />
 
-              {/* Decline Tab */}
-              <button
-                type="button"
-                onClick={() => handleDeclineRide(ride.id)}
-                className="py-3.5 px-4 rounded-2xl bg-slate-900/90 hover:bg-rose-500/15 active:scale-[0.98] text-slate-300 hover:text-rose-400 font-extrabold text-sm sm:text-base border border-slate-800 hover:border-rose-500/40 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm group"
-                aria-label="Decline Ride"
-              >
-                <XCircle className="w-5 h-5 text-slate-400 group-hover:text-rose-400 stroke-[2.5] transition-colors" />
-                <span className="tracking-wide">Decline</span>
-              </button>
+                    {/* Alert-sound-synchronized double blue pulse waves (triggered on every incoming chime) */}
+                    {soundPulseSeq > 0 && (
+                      <>
+                        <span
+                          key={`sound-wave-1-${soundPulseSeq}`}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-2xl border-2 border-sky-400/90 shadow-[0_0_20px_rgba(56,189,248,0.65)] animate-confirm-sound-wave-1"
+                        />
+                        <span
+                          key={`sound-wave-2-${soundPulseSeq}`}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-0 rounded-2xl border border-blue-400/80 animate-confirm-sound-wave-2"
+                        />
+                      </>
+                    )}
+
+                    <button
+                      key={ride.id}
+                      type="button"
+                      onClick={() => handleAcceptRide(ride)}
+                      className="relative z-10 w-full py-3.5 px-4 rounded-2xl overflow-hidden bg-blue-950 hover:brightness-110 active:scale-[0.98] font-black text-sm sm:text-base text-white shadow-[0_0_24px_rgba(37,99,235,0.45)] flex items-center justify-center gap-2 transition-transform cursor-pointer border border-blue-400/80 select-none"
+                      aria-label="Confirm Ride"
+                    >
+                      {/* Masked (elapsed) layer revealed from right to left */}
+                      <span className="flex items-center justify-center gap-2 text-white/80">
+                        <CheckCircle2 className="w-5 h-5 text-white/85 stroke-[3]" />
+                        <span className="tracking-wide text-white/85">Confirm</span>
+                      </span>
+
+                      {/* Active blue surface masked smoothly from right to left according to timer */}
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 bg-gradient-to-r from-blue-600 via-blue-500 to-sky-500 flex items-center justify-center gap-2 text-white transition-[clip-path] duration-1000 ease-linear"
+                        style={{ clipPath: `inset(0 ${elapsedMaskPct}% 0 0)` }}
+                      >
+                        <CheckCircle2 className="w-5 h-5 text-white stroke-[3]" />
+                        <span className="tracking-wide text-white">Confirm</span>
+                      </span>
+
+                      {/* Sound-coordinated blue-white pulse wave sweeping across Confirm tab */}
+                      {soundPulseSeq > 0 && (
+                        <span
+                          key={`shimmer-${soundPulseSeq}`}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-sky-200/40 to-transparent animate-confirm-shimmer-wave"
+                        />
+                      )}
+
+                      {/* Crisp vertical sweep edge moving right to left */}
+                      {elapsedMaskPct > 0 && elapsedMaskPct < 100 && (
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-white/85 shadow-[0_0_8px_rgba(255,255,255,0.9)] transition-[right] duration-1000 ease-linear"
+                          style={{ right: `${elapsedMaskPct}%` }}
+                        />
+                      )}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

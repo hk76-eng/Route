@@ -160,3 +160,59 @@
   animation: sound-wave-bar 0.8s ease-in-out infinite;
   transform-origin: center;
 }
+
+/* Blue pulse waves on Captain Confirm tab coordinated with timer & incoming sound alert */
+@keyframes confirm-blue-wave {
+  0% {
+    transform: scale(1, 1);
+    opacity: 0.78;
+  }
+  70% {
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.035, 1.38);
+    opacity: 0;
+  }
+}
+
+@keyframes confirm-sound-burst {
+  0% {
+    transform: scale(0.99, 0.96);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.045, 1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes confirm-shimmer-wave {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
+.animate-confirm-timer-wave {
+  animation: confirm-blue-wave 1s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-confirm-sound-wave-1 {
+  animation: confirm-sound-burst 0.95s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-confirm-sound-wave-2 {
+  animation: confirm-sound-burst 1.15s cubic-bezier(0.16, 1, 0.3, 1) 0.22s forwards;
+}
+
+.animate-confirm-shimmer-wave {
+  animation: confirm-shimmer-wave 0.9s ease-out forwards;
+}

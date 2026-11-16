@@ -7,7 +7,7 @@ import {
   useMap,
   useMapsLibrary,
 } from '@vis.gl/react-google-maps';
-import { Compass, Crosshair, Moon, Mountain, Navigation, Satellite } from 'lucide-react';
+import { Crosshair, Navigation } from 'lucide-react';
 import { AvailableCaptainItem, MotorideMap } from '../common/MotorideMap';
 import {
   GOOGLE_MAP_LAYERS,
@@ -948,70 +948,8 @@ export const PassengerGoogleMap: React.FC<PassengerGoogleMapProps> = ({
             </div>
           )}
 
-          {/* Top Right: Google Maps Layering Switcher, Navigator & Recenter */}
+          {/* Top Right: Navigator & Recenter */}
           <div className="absolute top-3 right-3 z-[400] flex items-center gap-2 max-w-[calc(100%-1.5rem)] flex-wrap justify-end">
-            <div className="flex items-center p-1 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-md">
-              <button
-                type="button"
-                onClick={() => onLayerChange('google-street')}
-                title="Google Streets / Roadmap (Default)"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeLayer === 'google-street'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Compass className="w-3.5 h-3.5 text-current" />
-                <span className="hidden sm:inline">Google Streets</span>
-                <span className="sm:hidden">Streets</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onLayerChange('google-satellite')}
-                title="Google Satellite Imagery"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeLayer === 'google-satellite'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Satellite className="w-3.5 h-3.5 text-current" />
-                <span className="hidden sm:inline">Google Satellite</span>
-                <span className="sm:hidden">Satellite</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onLayerChange('google-terrain')}
-                title="Google Terrain (Topographic Relief)"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeLayer === 'google-terrain'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Mountain className="w-3.5 h-3.5 text-current" />
-                <span className="hidden sm:inline">Google Terrain</span>
-                <span className="sm:hidden">Terrain</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => onLayerChange('voyager-dark')}
-                title="Voyager Dark Night Mode"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
-                  activeLayer === 'voyager-dark'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                }`}
-              >
-                <Moon className="w-3.5 h-3.5 text-current" />
-                <span className="hidden sm:inline">Voyager Dark</span>
-                <span className="sm:hidden">Dark</span>
-              </button>
-            </div>
-
             {!showLocationsABOnly && (
               <button
                 type="button"

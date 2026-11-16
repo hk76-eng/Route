@@ -8,14 +8,10 @@ import {
 } from '@vis.gl/react-google-maps';
 import {
   CheckCircle2,
-  Compass,
   Loader2,
   LocateFixed,
   MapPin,
-  Moon,
-  Mountain,
   Navigation,
-  Satellite,
   Search,
   X,
 } from 'lucide-react';
@@ -522,58 +518,6 @@ const LocationPickerBody: React.FC<PickerBodyProps> = ({
               className="w-full h-full"
             />
           )}
-
-          {/* Layer Switcher Floating Bar in Top Right of Modal Map */}
-          <div className="absolute top-3 right-3 z-[400] flex items-center p-1 rounded-2xl bg-white/95 backdrop-blur-md border border-slate-200/90 shadow-lg">
-            <button
-              type="button"
-              onClick={() => onLayerChange('google-street')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer whitespace-nowrap shrink-0 ${
-                activeLayer === 'google-street'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Compass className="w-3 h-3" />
-              <span className="hidden sm:inline">Streets</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onLayerChange('google-satellite')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer whitespace-nowrap shrink-0 ${
-                activeLayer === 'google-satellite'
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Satellite className="w-3 h-3" />
-              <span className="hidden sm:inline">Satellite</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onLayerChange('google-terrain')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer whitespace-nowrap shrink-0 ${
-                activeLayer === 'google-terrain'
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Mountain className="w-3 h-3" />
-              <span className="hidden sm:inline">Terrain</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onLayerChange('voyager-dark')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-[11px] font-bold cursor-pointer whitespace-nowrap shrink-0 ${
-                activeLayer === 'voyager-dark'
-                  ? 'bg-slate-900 text-white'
-                  : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <Moon className="w-3 h-3" />
-              <span className="hidden sm:inline">Dark</span>
-            </button>
-          </div>
         </div>
 
         {/* Bottom Confirmation Bar */}
