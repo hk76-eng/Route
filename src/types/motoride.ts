@@ -201,16 +201,16 @@ export interface FareSettings {
 export const DEFAULT_MOTORIDE_FARE_SETTINGS: FareSettings = {
   id: 'default',
   base_fare: 25.0,
-  per_km_rate: 12.0,
+  per_km_rate: 10.0,
   minimum_fare: 30.0,
   platform_commission_pct: 10.0,
   min_offer_pct: 70.0,
   max_offer_pct: 180.0,
   currency_symbol: '₹',
-  updated_at: new Date().toISOString(),
+  updated_at: '2026-01-01T00:00:00.000Z',
   ride_charges: {
     base_fare: 25.0,
-    per_km_rate: 12.0,
+    per_km_rate: 10.0,
     minimum_fare: 30.0,
     platform_commission_pct: 10.0,
     min_offer_pct: 70.0,
@@ -219,7 +219,7 @@ export const DEFAULT_MOTORIDE_FARE_SETTINGS: FareSettings = {
     auto_multiplier: 1.25,
     car_multiplier: 1.8,
     cancellation_fee: 20.0,
-    updated_at: new Date().toISOString(),
+    updated_at: '2026-01-01T00:00:00.000Z',
   },
   courier_charges: {
     base_fare: 35.0,
@@ -232,7 +232,7 @@ export const DEFAULT_MOTORIDE_FARE_SETTINGS: FareSettings = {
     express_surcharge: 15.0,
     max_weight_kg: 15.0,
     cancellation_fee: 25.0,
-    updated_at: new Date().toISOString(),
+    updated_at: '2026-01-01T00:00:00.000Z',
   },
 };
 

@@ -1090,6 +1090,15 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
     } catch {}
   };
 
+  useEffect(() => {
+    const unsubFare = realtimeSync.on('FARE_SETTINGS_UPDATED', (updated: FareSettings) => {
+      if (updated && typeof updated === 'object') {
+        setFareSettings(updated);
+      }
+    });
+    return () => unsubFare();
+  }, []);
+
   const handleToggleOnline = async () => {
     if (propToggleOnline) {
       propToggleOnline();
@@ -2090,7 +2099,9 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
           <div className="p-4 rounded-2xl bg-slate-950 text-white border border-black flex flex-col gap-1 shadow-sm">
             <span className="text-[11px] uppercase tracking-wider font-extrabold text-slate-400">Wallet Balance</span>
             <span className="text-2xl sm:text-3xl font-black font-mono-num text-emerald-400">₹{walletBalance}</span>
-            <span className="text-[10px] text-slate-400 font-bold">10% Platform fee deducted</span>
+            <span className="text-[10px] text-slate-400 font-bold">
+              {fareSettings?.ride_charges?.platform_commission_pct ?? fareSettings?.platform_commission_pct ?? 10}% Platform fee deducted
+            </span>
           </div>
         </div>
 
@@ -2099,7 +2110,14 @@ export const CaptainWorkspace: React.FC<CaptainWorkspaceProps> = ({
             <Zap className="w-4 h-4 text-amber-600" />
             <span className="font-bold text-slate-800">Platform Commission Rate:</span>
           </div>
-          <span className="font-black text-slate-950">10% (You keep 90%)</span>
+          {(() => {
+            const pct = fareSettings?.ride_charges?.platform_commission_pct ?? fareSettings?.platform_commission_pct ?? 10;
+            return (
+              <span className="font-black text-slate-950">
+                {pct}% (You keep {Math.max(0, 100 - pct)}%)
+              </span>
+            );
+          })()}
         </div>
 
         {onOpenWallet && (

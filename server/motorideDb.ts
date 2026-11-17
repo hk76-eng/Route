@@ -97,7 +97,7 @@ export function findAccountByEmail(email: string): any | null {
 
 export const defaultRideCharges: RideChargeSettings = {
   base_fare: 25.0,
-  per_km_rate: 12.0,
+  per_km_rate: 10.0,
   minimum_fare: 30.0,
   platform_commission_pct: 10.0,
   min_offer_pct: 70.0,
@@ -106,7 +106,7 @@ export const defaultRideCharges: RideChargeSettings = {
   auto_multiplier: 1.25,
   car_multiplier: 1.8,
   cancellation_fee: 20.0,
-  updated_at: new Date().toISOString(),
+  updated_at: '2026-01-01T00:00:00.000Z',
 };
 
 export const defaultCourierCharges: CourierChargeSettings = {
@@ -120,18 +120,18 @@ export const defaultCourierCharges: CourierChargeSettings = {
   express_surcharge: 15.0,
   max_weight_kg: 15.0,
   cancellation_fee: 25.0,
-  updated_at: new Date().toISOString(),
+  updated_at: '2026-01-01T00:00:00.000Z',
 };
 
 export let fareSettings: FareSettings = {
   base_fare: 25.0,
-  per_km_rate: 12.0,
+  per_km_rate: 10.0,
   minimum_fare: 30.0,
   platform_commission_pct: 10.0,
   min_offer_pct: 70.0,
   max_offer_pct: 180.0,
   currency_symbol: '₹',
-  updated_at: new Date().toISOString(),
+  updated_at: '2026-01-01T00:00:00.000Z',
   ride_charges: { ...defaultRideCharges },
   courier_charges: { ...defaultCourierCharges },
 };
@@ -166,6 +166,8 @@ export function loadFareSettingsFromDisk() {
           },
         };
       }
+    } else {
+      saveFareSettingsToDisk();
     }
   } catch (err) {
     console.warn('Failed to load fare settings from disk:', err);
@@ -176,6 +178,7 @@ export function loadFareSettingsFromDisk() {
 loadFareSettingsFromDisk();
 
 export function updateFareSettings(newSettings: Partial<FareSettings>): FareSettings {
+  const nowIso = newSettings.updated_at || new Date().toISOString();
   const mergedRide: RideChargeSettings = {
     ...(fareSettings.ride_charges || defaultRideCharges),
     ...(newSettings.ride_charges || {}),
@@ -191,6 +194,7 @@ export function updateFareSettings(newSettings: Partial<FareSettings>): FareSett
     if (newSettings.ride_charges.auto_multiplier !== undefined) mergedRide.auto_multiplier = Number(newSettings.ride_charges.auto_multiplier);
     if (newSettings.ride_charges.car_multiplier !== undefined) mergedRide.car_multiplier = Number(newSettings.ride_charges.car_multiplier);
     if (newSettings.ride_charges.cancellation_fee !== undefined) mergedRide.cancellation_fee = Number(newSettings.ride_charges.cancellation_fee);
+    mergedRide.updated_at = nowIso;
   }
 
   const mergedCourier: CourierChargeSettings = {
@@ -208,6 +212,7 @@ export function updateFareSettings(newSettings: Partial<FareSettings>): FareSett
     if (newSettings.courier_charges.express_surcharge !== undefined) mergedCourier.express_surcharge = Number(newSettings.courier_charges.express_surcharge);
     if (newSettings.courier_charges.max_weight_kg !== undefined) mergedCourier.max_weight_kg = Number(newSettings.courier_charges.max_weight_kg);
     if (newSettings.courier_charges.cancellation_fee !== undefined) mergedCourier.cancellation_fee = Number(newSettings.courier_charges.cancellation_fee);
+    mergedCourier.updated_at = nowIso;
   }
 
   fareSettings = {
@@ -221,7 +226,7 @@ export function updateFareSettings(newSettings: Partial<FareSettings>): FareSett
     max_offer_pct: Number(newSettings.max_offer_pct ?? mergedRide.max_offer_pct ?? fareSettings.max_offer_pct),
     ride_charges: mergedRide,
     courier_charges: mergedCourier,
-    updated_at: new Date().toISOString(),
+    updated_at: nowIso,
   };
 
   saveFareSettingsToDisk();

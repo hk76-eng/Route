@@ -555,10 +555,10 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
   let calculationDetails = {
     serviceName: 'MotoBike Ride',
     baseFare: 25,
-    perKmRate: 12,
+    perKmRate: 10,
     distanceKm,
     durationMin,
-    distanceCharge: Math.round(distanceKm * 12),
+    distanceCharge: Math.round(distanceKm * 10),
     multiplier: 1.0,
     handlingFee: 0,
     minimumFare: 30,
@@ -591,7 +591,7 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
         ? (rc.car_multiplier || 1.8)
         : 1.0;
     const base = rc.base_fare ?? fareSettings.base_fare ?? 25;
-    const rate = rc.per_km_rate ?? fareSettings.per_km_rate ?? 12;
+    const rate = rc.per_km_rate ?? fareSettings.per_km_rate ?? 10;
     const minFare = rc.minimum_fare ?? fareSettings.minimum_fare ?? 30;
     const running = distanceKm * rate;
     estimatedFare = Math.max(minFare, Math.round((base + running) * multiplier));
@@ -1249,6 +1249,29 @@ export const PassengerWorkspace: React.FC<PassengerWorkspaceProps> = ({
       if (s) setFareSettings(s);
     } catch {}
   };
+
+  useEffect(() => {
+    const unsubFare = realtimeSync.on('FARE_SETTINGS_UPDATED', (updated: FareSettings) => {
+      if (updated && typeof updated === 'object') {
+        setFareSettings((prev) => ({
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...prev,
+          ...updated,
+          ride_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+            ...(prev?.ride_charges || {}),
+            ...(updated.ride_charges || {}),
+          },
+          courier_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+            ...(prev?.courier_charges || {}),
+            ...(updated.courier_charges || {}),
+          },
+        }));
+      }
+    });
+    return () => unsubFare();
+  }, []);
 
   const loadActiveRide = async () => {
     try {

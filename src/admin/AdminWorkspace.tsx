@@ -5,6 +5,7 @@ import {
   Passenger,
   MotorideRide,
   FareSettings,
+  DEFAULT_MOTORIDE_FARE_SETTINGS,
   RideChargeSettings,
   CourierChargeSettings,
   QRCodeSetting,
@@ -99,18 +100,32 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   const [captains, setCaptains] = useState<Captain[]>([]);
   const [passengers, setPassengers] = useState<Passenger[]>([]);
   const [rides, setRides] = useState<MotorideRide[]>([]);
+  const isFareDirtyRef = useRef<boolean>(false);
+  const hasLoadedFareRef = useRef<boolean>(false);
   const [fareSettings, setFareSettings] = useState<FareSettings>(() => {
     try {
       const saved = localStorage.getItem('motoride_admin_fare_settings');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...parsed,
+          ride_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+            ...(parsed.ride_charges || {}),
+          },
+          courier_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+            ...(parsed.courier_charges || {}),
+          },
+        };
       }
     } catch {}
     return {
-      currency_symbol: '₹',
-      ride_charges: {},
-      courier_charges: {},
-    } as any;
+      ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+      ride_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges },
+      courier_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges },
+    };
   });
   const [testRideKm, setTestRideKm] = useState<number>(5.0);
   const [testCourierKm, setTestCourierKm] = useState<number>(4.0);
@@ -582,12 +597,22 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
       setCaptains(filteredCaptains);
       setPassengers(filteredPassengers);
       setRides(filteredRides);
-      // Do not overwrite fareSettings if admin is actively viewing/editing any fare tab
-      if (f && activeTabRef.current !== 'fare' && activeTabRef.current !== 'ride_charges' && activeTabRef.current !== 'courier_charges') {
-        const localSaved = localStorage.getItem('motoride_admin_fare_settings');
-        if (!localSaved) {
-          setFareSettings(f);
-        }
+      // Never automatically overwrite admin fare settings once initialized or edited
+      if (f && !isFareDirtyRef.current && !hasLoadedFareRef.current) {
+        hasLoadedFareRef.current = true;
+        try {
+          const localRaw = localStorage.getItem('motoride_admin_fare_settings');
+          if (!localRaw) {
+            setFareSettings(f);
+          } else {
+            const localParsed = JSON.parse(localRaw);
+            const localTs = localParsed?.updated_at ? new Date(localParsed.updated_at).getTime() : 0;
+            const serverTs = f.updated_at ? new Date(f.updated_at).getTime() : 0;
+            if (serverTs > localTs) {
+              setFareSettings(f);
+            }
+          }
+        } catch {}
       }
       if (q) setQrSettings(q);
     } catch {}
@@ -623,10 +648,33 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
 
   const handleSaveFare = async () => {
     try {
-      localStorage.setItem('motoride_admin_fare_settings', JSON.stringify(fareSettings));
-      const updated = await motorideApi.updateFareSettings(fareSettings);
+      const nowIso = new Date().toISOString();
+      const updatedSettings: FareSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+        ...fareSettings,
+        ride_charges: {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+          ...(fareSettings.ride_charges || {}),
+          base_fare: fareSettings.base_fare ?? fareSettings.ride_charges?.base_fare ?? 25,
+          per_km_rate: fareSettings.per_km_rate ?? fareSettings.ride_charges?.per_km_rate ?? 10,
+          minimum_fare: fareSettings.minimum_fare ?? fareSettings.ride_charges?.minimum_fare ?? 30,
+          platform_commission_pct:
+            fareSettings.platform_commission_pct ?? fareSettings.ride_charges?.platform_commission_pct ?? 10,
+          updated_at: nowIso,
+        },
+        courier_charges: {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+          ...(fareSettings.courier_charges || {}),
+          updated_at: nowIso,
+        },
+        updated_at: nowIso,
+      };
+      isFareDirtyRef.current = false;
+      hasLoadedFareRef.current = true;
+      localStorage.setItem('motoride_admin_fare_settings', JSON.stringify(updatedSettings));
+      const updated = await motorideApi.updateFareSettings(updatedSettings);
       if (updated) setFareSettings(updated);
-      setFareSaveStatus('Global Fare & Commission Rules saved! Values are locked to admin configuration and will not auto-fill or reset.');
+      setFareSaveStatus('Global Fare & Commission Rules saved permanently! Values are locked and will not auto-reset.');
       setTimeout(() => setFareSaveStatus(null), 4000);
     } catch (err: any) {
       alert(err.message || 'Failed to save');
@@ -635,21 +683,30 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
 
   const handleSaveRideCharges = async () => {
     try {
-      const currentRide: RideChargeSettings = fareSettings.ride_charges || {};
-      const updatedSettings: FareSettings = {
-        ...fareSettings,
-        base_fare: currentRide.base_fare ?? fareSettings.base_fare,
-        per_km_rate: currentRide.per_km_rate ?? fareSettings.per_km_rate,
-        minimum_fare: currentRide.minimum_fare ?? fareSettings.minimum_fare,
-        platform_commission_pct: currentRide.platform_commission_pct ?? fareSettings.platform_commission_pct,
-        min_offer_pct: currentRide.min_offer_pct ?? fareSettings.min_offer_pct,
-        max_offer_pct: currentRide.max_offer_pct ?? fareSettings.max_offer_pct,
-        ride_charges: currentRide,
+      const nowIso = new Date().toISOString();
+      const currentRide: RideChargeSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+        ...(fareSettings.ride_charges || {}),
+        updated_at: nowIso,
       };
+      const updatedSettings: FareSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+        ...fareSettings,
+        base_fare: currentRide.base_fare ?? fareSettings.base_fare ?? 25,
+        per_km_rate: currentRide.per_km_rate ?? fareSettings.per_km_rate ?? 10,
+        minimum_fare: currentRide.minimum_fare ?? fareSettings.minimum_fare ?? 30,
+        platform_commission_pct: currentRide.platform_commission_pct ?? fareSettings.platform_commission_pct ?? 10,
+        min_offer_pct: currentRide.min_offer_pct ?? fareSettings.min_offer_pct ?? 70,
+        max_offer_pct: currentRide.max_offer_pct ?? fareSettings.max_offer_pct ?? 180,
+        ride_charges: currentRide,
+        updated_at: nowIso,
+      };
+      isFareDirtyRef.current = false;
+      hasLoadedFareRef.current = true;
       localStorage.setItem('motoride_admin_fare_settings', JSON.stringify(updatedSettings));
-      const res = await motorideApi.updateRideCharges(currentRide);
+      const res = await motorideApi.updateFareSettings(updatedSettings);
       if (res) setFareSettings(res);
-      setRideSaveStatus('Passenger Ride Charges saved permanently! Updated across platform.');
+      setRideSaveStatus('Ride Charges & Commission saved permanently! Values are locked and will not change automatically.');
       setTimeout(() => setRideSaveStatus(null), 4000);
     } catch (err: any) {
       alert(err?.message || 'Failed to save ride charges');
@@ -657,23 +714,35 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   };
 
   const handleResetRideCharges = () => {
-    setFareSettings(prev => ({
+    isFareDirtyRef.current = true;
+    setFareSettings((prev) => ({
       ...prev,
-      ride_charges: {},
+      per_km_rate: DEFAULT_MOTORIDE_FARE_SETTINGS.per_km_rate,
+      platform_commission_pct: DEFAULT_MOTORIDE_FARE_SETTINGS.platform_commission_pct,
+      ride_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges },
     }));
-    setRideSaveStatus('Cleared ride charges. Enter new pricing and click "Save Ride Charges" to lock.');
+    setRideSaveStatus('Restored defaults (₹10/km & 10% commission). Click "Save Ride Charges" to lock.');
     setTimeout(() => setRideSaveStatus(null), 4000);
   };
 
   const handleSaveCourierCharges = async () => {
     try {
-      const currentCourier: CourierChargeSettings = fareSettings.courier_charges || {};
+      const nowIso = new Date().toISOString();
+      const currentCourier: CourierChargeSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+        ...(fareSettings.courier_charges || {}),
+        updated_at: nowIso,
+      };
       const updatedSettings: FareSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS,
         ...fareSettings,
         courier_charges: currentCourier,
+        updated_at: nowIso,
       };
+      isFareDirtyRef.current = false;
+      hasLoadedFareRef.current = true;
       localStorage.setItem('motoride_admin_fare_settings', JSON.stringify(updatedSettings));
-      const res = await motorideApi.updateCourierCharges(currentCourier);
+      const res = await motorideApi.updateFareSettings(updatedSettings);
       if (res) setFareSettings(res);
       setCourierSaveStatus('Courier Delivery Charges saved permanently! Updated across platform.');
       setTimeout(() => setCourierSaveStatus(null), 4000);
@@ -683,11 +752,12 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
   };
 
   const handleResetCourierCharges = () => {
-    setFareSettings(prev => ({
+    isFareDirtyRef.current = true;
+    setFareSettings((prev) => ({
       ...prev,
-      courier_charges: {},
+      courier_charges: { ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges },
     }));
-    setCourierSaveStatus('Cleared courier charges. Enter new pricing and click "Save Courier Charges" to lock.');
+    setCourierSaveStatus('Restored default courier charges. Click "Save Courier Charges" to lock.');
     setTimeout(() => setCourierSaveStatus(null), 4000);
   };
 
@@ -807,7 +877,6 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
           { key: 'rides', label: `Live Rides (${rides.length})`, icon: Bike },
           { key: 'captains', label: `Captains (${captains.length})`, icon: Users },
           { key: 'passengers', label: `Passengers (${passengers.length})`, icon: Users },
-          { key: 'fare', label: 'Fare & Commission', icon: Settings },
           { key: 'ride_charges', label: 'Ride Charges / KM', icon: Bike },
           { key: 'courier_charges', label: 'Courier Charges / KM', icon: Settings },
           { key: 'qr', label: 'Official QR Code', icon: QrCode },
@@ -1622,12 +1691,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Base Unlock Fare (₹)"
                 value={fareSettings.base_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     base_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1640,12 +1710,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Per-KM Rate (₹/km)"
                 value={fareSettings.per_km_rate ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     per_km_rate: e.target.value === '' ? (undefined as any) : Number(e.target.value),
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1658,12 +1729,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Minimum Fare (₹)"
                 value={fareSettings.minimum_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     minimum_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1676,12 +1748,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Commission %"
                 value={fareSettings.platform_commission_pct ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     platform_commission_pct: e.target.value === '' ? (undefined as any) : Number(e.target.value),
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-emerald-400 font-bold"
               />
             </div>
@@ -1696,12 +1769,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
             </div>
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                isFareDirtyRef.current = true;
                 setFareSettings({
                   ...fareSettings,
                   require_admin_approval_for_rides: !fareSettings.require_admin_approval_for_rides,
-                })
-              }
+                });
+              }}
               className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
                 fareSettings.require_admin_approval_for_rides ? 'bg-indigo-600' : 'bg-slate-700'
               }`}
@@ -1750,15 +1824,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Ride Base Fare (₹)"
                 value={fareSettings.ride_charges?.base_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     ride_charges: {
                       ...(fareSettings.ride_charges || {}),
                       base_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1771,15 +1846,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Ride Per-KM Rate (₹/km)"
                 value={fareSettings.ride_charges?.per_km_rate ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     ride_charges: {
                       ...(fareSettings.ride_charges || {}),
                       per_km_rate: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1792,15 +1868,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Minimum Fare Floor (₹)"
                 value={fareSettings.ride_charges?.minimum_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     ride_charges: {
                       ...(fareSettings.ride_charges || {}),
                       minimum_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1813,15 +1890,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Commission %"
                 value={fareSettings.ride_charges?.platform_commission_pct ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     ride_charges: {
                       ...(fareSettings.ride_charges || {}),
                       platform_commission_pct: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-emerald-400 font-bold"
               />
             </div>
@@ -1872,15 +1950,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Courier Base Fare (₹)"
                 value={fareSettings.courier_charges?.base_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     courier_charges: {
                       ...(fareSettings.courier_charges || {}),
                       base_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1893,15 +1972,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Courier Per-KM Rate (₹/km)"
                 value={fareSettings.courier_charges?.per_km_rate ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     courier_charges: {
                       ...(fareSettings.courier_charges || {}),
                       per_km_rate: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1914,15 +1994,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Courier Minimum Fare (₹)"
                 value={fareSettings.courier_charges?.minimum_fare ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     courier_charges: {
                       ...(fareSettings.courier_charges || {}),
                       minimum_fare: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-white font-bold"
               />
             </div>
@@ -1935,15 +2016,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                 type="number"
                 placeholder="Set Commission %"
                 value={fareSettings.courier_charges?.platform_commission_pct ?? ''}
-                onChange={(e) =>
+                onChange={(e) => {
+                  isFareDirtyRef.current = true;
                   setFareSettings({
                     ...fareSettings,
                     courier_charges: {
                       ...(fareSettings.courier_charges || {}),
                       platform_commission_pct: e.target.value === '' ? (undefined as any) : Number(e.target.value),
                     },
-                  })
-                }
+                  });
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm font-mono-num text-emerald-400 font-bold"
               />
             </div>

@@ -431,6 +431,34 @@ realtimeSync.on('REQUEST_SYNC_RECEIVED', () => {
   }
 });
 
+realtimeSync.on('FARE_SETTINGS_UPDATED', (incoming: FareSettings) => {
+  if (!incoming || typeof incoming !== 'object') return;
+  try {
+    const raw = safeStorage.getItem('motoride_admin_fare_settings');
+    const local = raw ? JSON.parse(raw) : null;
+    const localTs = local?.updated_at ? new Date(local.updated_at).getTime() : 0;
+    const incomingTs = incoming.updated_at ? new Date(incoming.updated_at).getTime() : Date.now();
+    if (!local || incomingTs >= localTs) {
+      const normalized: FareSettings = {
+        ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+        ...local,
+        ...incoming,
+        ride_charges: {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+          ...(local?.ride_charges || {}),
+          ...(incoming.ride_charges || {}),
+        },
+        courier_charges: {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+          ...(local?.courier_charges || {}),
+          ...(incoming.courier_charges || {}),
+        },
+      };
+      safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(normalized));
+    }
+  } catch {}
+});
+
 async function safeFetchJson<T = any>(url: string, options?: RequestInit, fallback: T = {} as T): Promise<T> {
   if (isStaticBackendUnavailable() && url.startsWith('/api/motoride')) {
     return fallback;
@@ -1284,11 +1312,12 @@ export const motorideApi = {
 
   // 4. Fare Settings
   async getFareSettings(): Promise<FareSettings> {
+    let localNormalized: FareSettings | null = null;
     try {
       const local = safeStorage.getItem('motoride_admin_fare_settings');
       if (local) {
         const parsed = JSON.parse(local);
-        return {
+        localNormalized = {
           ...DEFAULT_MOTORIDE_FARE_SETTINGS,
           ...parsed,
           ride_charges: {
@@ -1303,42 +1332,133 @@ export const motorideApi = {
       }
     } catch {}
 
-    const json = await safeFetchJson<{ settings: FareSettings }>(`${getApiBase()}/fare-settings`, undefined, {
-      settings: DEFAULT_MOTORIDE_FARE_SETTINGS,
-    });
-    const returned = json.settings || DEFAULT_MOTORIDE_FARE_SETTINGS;
-    return {
-      ...DEFAULT_MOTORIDE_FARE_SETTINGS,
-      ...returned,
-      ride_charges: {
-        ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
-        ...(returned.ride_charges || {}),
-      },
-      courier_charges: {
-        ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
-        ...(returned.courier_charges || {}),
-      },
-    };
+    const json = await safeFetchJson<{ settings?: FareSettings }>(
+      `${getApiBase()}/fare-settings`,
+      undefined,
+      { settings: localNormalized || DEFAULT_MOTORIDE_FARE_SETTINGS }
+    );
+    const returned = json?.settings;
+    const serverNormalized: FareSettings | null = returned
+      ? {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...returned,
+          ride_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+            ...(returned.ride_charges || {}),
+          },
+          courier_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+            ...(returned.courier_charges || {}),
+          },
+        }
+      : null;
+
+    if (localNormalized && serverNormalized) {
+      const localTs = localNormalized.updated_at ? new Date(localNormalized.updated_at).getTime() : 0;
+      const serverTs = serverNormalized.updated_at ? new Date(serverNormalized.updated_at).getTime() : 0;
+      // Preserve admin's locally saved settings unless server has a strictly newer saved update
+      if (localTs >= serverTs) {
+        return localNormalized;
+      }
+      try {
+        safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(serverNormalized));
+      } catch {}
+      return serverNormalized;
+    }
+
+    return localNormalized || serverNormalized || DEFAULT_MOTORIDE_FARE_SETTINGS;
   },
 
   async updateFareSettings(settings: Partial<FareSettings>): Promise<FareSettings> {
+    const nowIso = new Date().toISOString();
+    let existing: FareSettings = { ...DEFAULT_MOTORIDE_FARE_SETTINGS };
     try {
-      const existing = safeStorage.getItem('motoride_admin_fare_settings');
-      const parsed = existing ? JSON.parse(existing) : {};
-      const merged = { ...parsed, ...settings };
+      const raw = safeStorage.getItem('motoride_admin_fare_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        existing = {
+          ...DEFAULT_MOTORIDE_FARE_SETTINGS,
+          ...parsed,
+          ride_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+            ...(parsed.ride_charges || {}),
+          },
+          courier_charges: {
+            ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+            ...(parsed.courier_charges || {}),
+          },
+        };
+      }
+    } catch {}
+
+    const mergedRide = {
+      ...DEFAULT_MOTORIDE_FARE_SETTINGS.ride_charges,
+      ...(existing.ride_charges || {}),
+      ...(settings.ride_charges || {}),
+      updated_at: nowIso,
+    };
+    const mergedCourier = {
+      ...DEFAULT_MOTORIDE_FARE_SETTINGS.courier_charges,
+      ...(existing.courier_charges || {}),
+      ...(settings.courier_charges || {}),
+      updated_at: nowIso,
+    };
+
+    const merged: FareSettings = {
+      ...existing,
+      ...settings,
+      base_fare: Number(settings.base_fare ?? mergedRide.base_fare ?? existing.base_fare),
+      per_km_rate: Number(settings.per_km_rate ?? mergedRide.per_km_rate ?? existing.per_km_rate),
+      minimum_fare: Number(settings.minimum_fare ?? mergedRide.minimum_fare ?? existing.minimum_fare),
+      platform_commission_pct: Number(
+        settings.platform_commission_pct ?? mergedRide.platform_commission_pct ?? existing.platform_commission_pct
+      ),
+      min_offer_pct: Number(settings.min_offer_pct ?? mergedRide.min_offer_pct ?? existing.min_offer_pct),
+      max_offer_pct: Number(settings.max_offer_pct ?? mergedRide.max_offer_pct ?? existing.max_offer_pct),
+      ride_charges: mergedRide,
+      courier_charges: mergedCourier,
+      updated_at: nowIso,
+    };
+
+    try {
       safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(merged));
     } catch {}
 
-    const json = await safeFetchJson<{ settings: FareSettings }>(`${getApiBase()}/fare-settings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
-    });
-    return json.settings || (settings as FareSettings);
+    realtimeSync.broadcast('FARE_SETTINGS_UPDATED', merged);
+
+    const json = await safeFetchJson<{ settings?: FareSettings }>(
+      `${getApiBase()}/fare-settings`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged),
+      },
+      { settings: merged }
+    );
+    const saved = json?.settings
+      ? {
+          ...merged,
+          ...json.settings,
+          ride_charges: { ...merged.ride_charges, ...(json.settings.ride_charges || {}) },
+          courier_charges: { ...merged.courier_charges, ...(json.settings.courier_charges || {}) },
+        }
+      : merged;
+    try {
+      safeStorage.setItem('motoride_admin_fare_settings', JSON.stringify(saved));
+    } catch {}
+    return saved;
   },
 
   async updateRideCharges(charges: Partial<import('../types/motoride').RideChargeSettings>): Promise<FareSettings> {
-    return this.updateFareSettings({ ride_charges: charges as any });
+    return this.updateFareSettings({
+      base_fare: charges.base_fare,
+      per_km_rate: charges.per_km_rate,
+      minimum_fare: charges.minimum_fare,
+      platform_commission_pct: charges.platform_commission_pct,
+      min_offer_pct: charges.min_offer_pct,
+      max_offer_pct: charges.max_offer_pct,
+      ride_charges: charges as any,
+    });
   },
 
   async updateCourierCharges(charges: Partial<import('../types/motoride').CourierChargeSettings>): Promise<FareSettings> {
